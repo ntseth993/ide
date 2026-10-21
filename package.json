@@ -6,7 +6,10 @@
   "bin": {
     "nova": "bin/nova.js"
   },
-  "author": "NovaCode Contributors",
+  "author": {
+    "name": "NovaCode Contributors",
+    "email": "ntseth993@gmail.com"
+  },
   "license": "MIT",
   "private": true,
   "scripts": {
