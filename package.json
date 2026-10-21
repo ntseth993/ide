@@ -71,6 +71,13 @@
         {
           "target": "nsis",
           "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "msi",
+          "arch": [
             "x64"
           ]
         }
@@ -99,17 +106,12 @@
     "linux": {
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm"
       ],
       "artifactName": "NovaCode-Linux-${arch}.${ext}",
       "category": "Development",
-      "executableName": "novacode",
-      "extraFiles": [
-        {
-          "from": "bin/nova",
-          "to": "/usr/bin/nova"
-        }
-      ]
+      "executableName": "novacode"
     }
   }
 }
