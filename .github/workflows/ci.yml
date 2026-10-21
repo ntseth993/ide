@@ -63,19 +63,38 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Install Linux packaging tools (rpm)
+      - name: Install Linux packaging tools (rpm, fuse)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: sudo apt-get update && sudo apt-get install -y rpm libfuse2
       - name: Build renderer
         run: npm run build
       - name: Package installers (core targets)
-        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.core }} --publish never
+        shell: bash
+        run: |
+          set +e
+          npx electron-builder --${{ matrix.platform }} ${{ matrix.core }} --publish never > eb-core.log 2>&1
+          code=$?
+          cat eb-core.log
+          if [ $code -ne 0 ]; then
+            msg="$(grep -iE 'error|fail|cannot|enoent|⨯' eb-core.log | tail -n 15 | sed 's/::/%3A%3A/g' | awk 'NR>1{printf "%%0A"} {printf "%s", $0}')"
+            echo "::error::core packaging failed (exit ${code}): ${msg:-see log}"
+            exit $code
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Package installers (optional targets)
         if: matrix.extra != ''
         continue-on-error: true
-        run: npx electron-builder --${{ matrix.platform }} ${{ matrix.extra }} --publish never
+        shell: bash
+        run: |
+          set +e
+          npx electron-builder --${{ matrix.platform }} ${{ matrix.extra }} --publish never > eb-extra.log 2>&1
+          code=$?
+          cat eb-extra.log
+          if [ $code -ne 0 ]; then
+            msg="$(grep -iE 'error|fail|cannot|enoent|⨯' eb-extra.log | tail -n 15 | sed 's/::/%3A%3A/g' | awk 'NR>1{printf "%%0A"} {printf "%s", $0}')"
+            echo "::warning::optional packaging (${{ matrix.extra }}) failed (exit ${code}): ${msg:-see log}"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload installer artifacts
