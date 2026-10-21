@@ -297,7 +297,7 @@ export const BUILTIN_SNIPPETS = {
 };
 
 /** Monaco ids that reuse another language's snippets. */
-const SNIPPET_ALIASES = {
+export const SNIPPET_ALIASES = {
   typescriptreact: 'typescript',
   javascriptreact: 'javascript',
   scss: 'css',

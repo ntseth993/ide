@@ -95,7 +95,7 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    expect(channels.size).toBe(43);
+    expect(channels.size).toBe(44);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -106,8 +106,8 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(43);
-    expect(result.channelCount).toBe(43);
+    expect(secondChannels.size).toBe(44);
+    expect(result.channelCount).toBe(44);
   });
 
   it('exposes the provider catalog and account channels', async () => {

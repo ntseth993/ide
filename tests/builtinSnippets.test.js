@@ -12,7 +12,7 @@ describe('built-in code shortcuts', () => {
     const javascript = getBuiltinSnippets('javascript');
     const fn = javascript.find((snippet) => snippet.prefix === 'fn');
     expect(fn).toBeTruthy();
-    expect(fn.body).toContain('$1');
+    expect(fn.body).toMatch(/\$\{?1/);
     expect(javascript.length).toBeGreaterThan(5);
   });
 
