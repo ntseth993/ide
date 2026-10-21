@@ -81,8 +81,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "NovaCode",
-      "include": "build/installer.nsh"
+      "shortcutName": "NovaCode"
     },
     "mac": {
       "target": [
