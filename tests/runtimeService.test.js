@@ -25,10 +25,13 @@ const NODE_TOOL = {
   versionPattern: /v(\d+[.\d]*)/, installHint: 'https://nodejs.org',
 };
 
+// The service resolves PATH with the platform's lookup tool; key the fake by it.
+const LOOKUP = process.platform === 'win32' ? 'where' : 'which';
+
 describe('createRuntimeService', () => {
   it('reports a found tool with its version and path', async () => {
     const fake = fakeExec({
-      where: { error: null, stdout: 'C:\\tools\\node.exe\n', stderr: '' },
+      [LOOKUP]: { error: null, stdout: 'C:\\tools\\node.exe\n', stderr: '' },
       'C:\\tools\\node.exe': { error: null, stdout: 'v24.16.0\n', stderr: '' },
     });
     const service = createRuntimeService({ tools: [NODE_TOOL], execFileFn: fake.execFileFn });
@@ -44,7 +47,7 @@ describe('createRuntimeService', () => {
 
   it('reads versions printed on stderr (java -version style)', async () => {
     const fake = fakeExec({
-      where: { error: null, stdout: '/usr/bin/java\n', stderr: '' },
+      [LOOKUP]: { error: null, stdout: '/usr/bin/java\n', stderr: '' },
       '/usr/bin/java': { error: null, stdout: '', stderr: 'openjdk version "21.0.2" 2024-01-16\n' },
     });
     const service = createRuntimeService({
@@ -67,7 +70,7 @@ describe('createRuntimeService', () => {
 
   it('handles a tool on PATH whose version cannot be parsed', async () => {
     const fake = fakeExec({
-      where: { error: null, stdout: '/opt/tool\n', stderr: '' },
+      [LOOKUP]: { error: null, stdout: '/opt/tool\n', stderr: '' },
       '/opt/tool': { error: null, stdout: 'gibberish', stderr: '' },
     });
     const service = createRuntimeService({ tools: [NODE_TOOL], execFileFn: fake.execFileFn });
