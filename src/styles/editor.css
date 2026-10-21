@@ -1,0 +1,134 @@
+/* ==========================================================================
+   NovaCode IDE — editor area
+   --------------------------------------------------------------------------
+   Tabs, breadcrumbs and the Monaco container. Monaco's internal layout,
+   scrolling and syntax highlighting are NOT overridden here — only its
+   theme (defined in monacoSetup.js) and the container that hosts it.
+   ========================================================================== */
+
+/* --- tab strip ------------------------------------------------------------------ */
+
+.tabstrip {
+  display: flex;
+  align-items: stretch;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-height: 38px;
+}
+
+.tabstrip-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 0 1rem;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0 0.6rem 0 0.9rem;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--muted);
+  background: transparent;
+  border-top: 2px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+  position: relative;
+  transition: color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out), border-top-color var(--dur-base) var(--ease-out);
+}
+.tab:hover:not(:disabled) { color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); transform: none; box-shadow: none; }
+
+.tab.active {
+  background: var(--bg);
+  color: var(--text);
+  border-top-color: var(--accent);
+}
+/* Soft glow bleeding down from the active-tab indicator — drawn inside the
+   tab so it never covers editor content. */
+.tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 26px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 12%, transparent), transparent);
+}
+
+.tab-name { font-size: 0.82rem; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 60%, transparent);
+}
+.tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.tab:hover .tab-close, .tab:focus-within .tab-close, .tab.active .tab-close { opacity: 1; }
+.tab-close:hover:not(:disabled) { background: var(--surface-3); color: var(--text); transform: none; box-shadow: none; }
+
+/* --- breadcrumbs -------------------------------------------------------------------- */
+
+.breadcrumb {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.35rem 1rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.crumb {
+  color: inherit;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.crumb:hover { color: var(--accent-2); }
+.crumb-sep { opacity: 0.5; }
+.crumb.current { color: var(--text); }
+
+/* --- editor container ------------------------------------------------------------------- */
+
+.editor-area { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+/* The @monaco-editor/react wrapper must fill the column, otherwise the editor
+   collapses toward its content height and the completion popup gets clipped. */
+.editor-area .monaco-host { flex: 1; min-height: 0; }
+.editor-area .monaco-host > div { height: 100%; }
+.editor-area .monaco-editor { flex: 1; }
+
+.editor-placeholder {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  animation: nc-fade-in var(--dur-slow) var(--ease-out) both;
+}
+.editor-placeholder h2 {
+  margin: 0;
+  color: var(--text);
+  background: linear-gradient(120deg, var(--text) 60%, var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}

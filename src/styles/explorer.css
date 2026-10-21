@@ -1,0 +1,75 @@
+/* ==========================================================================
+   NovaCode IDE — file explorer
+   --------------------------------------------------------------------------
+   Tree rows, chevrons, hover-revealed row actions and file-type badges.
+   Selection and expansion stay instant — animations are decorative only
+   and never delay filesystem operations.
+   ========================================================================== */
+
+.tree { flex: 1; overflow: auto; padding: 0.4rem 0.3rem; }
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  color: var(--text);
+  border: 1px solid transparent;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  /* Newly mounted rows (folder expansion) slide in; existing rows never
+     replay this because React keeps them keyed by path. */
+  animation: nc-row-in var(--dur-fast) var(--ease-out) both;
+}
+.tree-row:hover:not(:disabled) { background: var(--surface-2); transform: none; box-shadow: none; }
+.tree-row.selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.tree-row:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--accent-line); }
+.tree-row.active-tab .tree-name { font-weight: 600; }
+
+.tree-chevron {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  color: var(--muted);
+}
+.tree-chevron svg { transition: transform var(--dur-fast) var(--ease-spring); }
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+
+.node-actions { display: none; margin-left: auto; }
+.tree-row:hover .node-actions,
+.tree-row:focus-within .node-actions { display: inline-flex; }
+
+/* --- file-type badges ---------------------------------------------------------- */
+
+.type-badge {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  width: 18px;
+  text-align: center;
+  border-radius: 4px;
+  padding: 0.08rem 0;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.type-badge.tone-js { color: #f7df1e; }
+.type-badge.tone-ts { color: #61dafb; }
+.type-badge.tone-py { color: #4ade80; }
+.type-badge.tone-json { color: #fbbf24; }
+.type-badge.tone-html { color: #fb923c; }
+.type-badge.tone-css { color: #38bdf8; }
+.type-badge.tone-md { color: #a78bfa; }
+.type-badge.tone-sh { color: #94a3b8; }

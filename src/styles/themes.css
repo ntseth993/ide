@@ -1,0 +1,128 @@
+/* ==========================================================================
+   NovaCode IDE — theme atmospheres
+   --------------------------------------------------------------------------
+   Each non-neutral theme paints one decorative layer on `body::after`
+   (fixed, z-index:-1, pointer-events:none) so motion lives strictly behind the
+   opaque panel/editor surfaces — the same technique as the ambient lighting in
+   global.css. Everything is background-position/opacity only (no layout
+   thrash) and is disabled wholesale for high contrast, plus by
+   .reduce-animations / prefers-reduced-motion in animations.css.
+   ========================================================================== */
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-slower) var(--ease-out);
+}
+
+/* Neutral themes keep the existing ambient lighting only. */
+:root[data-theme='dark'] body::after,
+:root[data-theme='light'] body::after,
+:root[data-theme='high-contrast'] body::after {
+  opacity: 0;
+}
+
+/* --- dragon: embers drifting up through hot air ---------------------------- */
+:root[data-theme='dragon'] body::after {
+  opacity: 1;
+  background-image:
+    radial-gradient(2px 2px at 22% 28%, rgba(255, 176, 96, 0.85), transparent 65%),
+    radial-gradient(3px 3px at 68% 62%, rgba(255, 96, 48, 0.7), transparent 62%),
+    radial-gradient(2px 2px at 44% 84%, rgba(255, 210, 140, 0.6), transparent 60%),
+    radial-gradient(48rem 26rem at 50% 108%, rgba(255, 92, 40, 0.22), transparent 70%);
+  background-size: 340px 340px, 260px 260px, 200px 200px, 100% 100%;
+  background-repeat: repeat, repeat, repeat, no-repeat;
+  animation: nova-embers 16s linear infinite;
+}
+@keyframes nova-embers {
+  from { background-position: 0 340px, 0 260px, 0 200px, 0 0; }
+  to   { background-position: 0 -340px, 0 -260px, 0 -200px, 0 0; }
+}
+
+/* --- flowers: petals falling and turning ---------------------------------- */
+:root[data-theme='flowers'] body::after {
+  opacity: 1;
+  background-image:
+    radial-gradient(9px 5px at 30% 18%, rgba(236, 120, 170, 0.5), transparent 70%),
+    radial-gradient(7px 4px at 62% 46%, rgba(242, 132, 176, 0.42), transparent 70%),
+    radial-gradient(11px 6px at 84% 12%, rgba(214, 70, 140, 0.3), transparent 72%),
+    radial-gradient(30rem 20rem at 8% -6%, rgba(124, 195, 106, 0.16), transparent 70%);
+  background-size: 420px 420px, 320px 320px, 260px 260px, 100% 100%;
+  background-repeat: repeat, repeat, repeat, no-repeat;
+  animation: nova-petals 22s linear infinite;
+}
+@keyframes nova-petals {
+  from { background-position: 0 -420px, 0 -320px, 0 -260px, 0 0; }
+  to   { background-position: 60px 420px, -40px 320px, 30px 260px, 0 0; }
+}
+
+/* --- ocean: caustic light rolling over the surface ------------------------- */
+:root[data-theme='ocean'] body::after {
+  opacity: 1;
+  background-image:
+    radial-gradient(40rem 18rem at 20% 8%, rgba(94, 234, 212, 0.16), transparent 68%),
+    radial-gradient(36rem 16rem at 78% 22%, rgba(34, 184, 214, 0.18), transparent 70%),
+    repeating-linear-gradient(102deg, rgba(160, 240, 255, 0.05) 0 2px, transparent 2px 26px);
+  background-size: 130% 100%, 130% 100%, 200% 200%;
+  animation: nova-caustics 18s ease-in-out infinite alternate;
+}
+@keyframes nova-caustics {
+  from { background-position: 0% 0, 100% 0, 0 0; }
+  to   { background-position: 100% 0, 0% 0, 60% 30%; }
+}
+
+/* --- forest: sun dapples through leaves, spores drifting ------------------ */
+:root[data-theme='forest'] body::after {
+  opacity: 1;
+  background-image:
+    radial-gradient(26rem 14rem at 12% -4%, rgba(163, 230, 53, 0.16), transparent 66%),
+    radial-gradient(3px 3px at 36% 54%, rgba(190, 240, 150, 0.5), transparent 65%),
+    radial-gradient(2px 2px at 74% 32%, rgba(150, 220, 130, 0.45), transparent 65%);
+  background-size: 100% 100%, 300px 300px, 220px 220px;
+  background-repeat: no-repeat, repeat, repeat;
+  animation: nova-dapple 20s ease-in-out infinite alternate;
+}
+@keyframes nova-dapple {
+  from { background-position: 0 0, 0 0, 0 40px; }
+  to   { background-position: 0 0, -70px -90px, 60px -60px; }
+}
+
+/* --- synthwave: neon grid flowing toward the horizon ---------------------- */
+:root[data-theme='synthwave'] body::after {
+  opacity: 1;
+  background-image:
+    linear-gradient(to bottom, rgba(139, 92, 246, 0.28), transparent 42%),
+    repeating-linear-gradient(90deg, rgba(255, 79, 216, 0.22) 0 2px, transparent 2px 46px),
+    repeating-linear-gradient(0deg, rgba(34, 211, 238, 0.18) 0 2px, transparent 2px 34px);
+  background-size: 100% 100%, 100% 46%, 100% 46%;
+  background-position: 0 0, 0 100%, 0 100%;
+  background-repeat: no-repeat, repeat-x, repeat;
+  animation: nova-horizon 6s linear infinite;
+}
+@keyframes nova-horizon {
+  from { background-position: 0 0, 0 100%, 0 100%; }
+  to   { background-position: 0 0, 92px 100%, 0 calc(100% + 34px); }
+}
+
+/* --- sunset: warm sky slowly changing temperature ------------------------- */
+:root[data-theme='sunset'] body::after {
+  opacity: 1;
+  background-image:
+    radial-gradient(46rem 22rem at 18% 4%, rgba(255, 159, 69, 0.2), transparent 68%),
+    radial-gradient(40rem 20rem at 84% 16%, rgba(255, 107, 129, 0.18), transparent 70%),
+    radial-gradient(52rem 24rem at 50% 104%, rgba(192, 132, 252, 0.16), transparent 72%);
+  animation: nova-dusk 24s ease-in-out infinite alternate;
+}
+@keyframes nova-dusk {
+  from { background-position: 0 0, 0 0, 0 0; opacity: 0.75; }
+  to   { background-position: 8% 6%, -6% 4%, 0 -4%; opacity: 1; }
+}
+
+/* Themed chrome: a hairline of theme colour under the top menu bar. */
+:root[data-theme]:not([data-theme='high-contrast']) .menu-bar {
+  border-bottom-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+}

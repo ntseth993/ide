@@ -1,0 +1,16 @@
+/* NovaCode IDE — stylesheet entry. Import order matters: tokens first,
+   then base, then motion, then layout, then feature modules. */
+@import './variables.css';
+@import './global.css';
+@import './animations.css';
+@import './themes.css';
+@import './layout.css';
+@import './menus.css';
+@import './components.css';
+@import './settings.css';
+@import './editor.css';
+@import './explorer.css';
+@import './terminal.css';
+@import './assistant.css';
+@import './extensions.css';
+@import './responsive.css';

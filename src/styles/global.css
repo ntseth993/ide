@@ -1,0 +1,231 @@
+/* ==========================================================================
+   NovaCode IDE — global base
+   --------------------------------------------------------------------------
+   Reset, document shell, scrollbars, focus visibility, buttons and inputs.
+   All element styles here are intentionally global; component-specific rules
+   live in their own modules.
+   ========================================================================== */
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  /* --nc-startup-bg is seeded by the main process from the remembered theme so
+     the very first frame already matches; the renderer then keeps it equal to
+     the active palette (see the theme effect in App.jsx). */
+  background: var(--nc-startup-bg, var(--bg));
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition:
+    background-color var(--dur-slow) var(--ease-out),
+    color var(--dur-slow) var(--ease-out);
+}
+
+/* One theme switch, felt everywhere at once: solid chrome surfaces cross-fade
+   instead of snapping, so no page looks half-recoloured. */
+.app-root,
+.activity-bar,
+.sidebar,
+.right-panel,
+.panel-header,
+.menu-bar,
+.status-bar,
+.terminal-panel,
+.editor-tabs,
+.welcome-card,
+.settings-group {
+  transition:
+    background-color var(--dur-slow) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-slow) var(--ease-out);
+}
+
+/* Very subtle ambient lighting on the app background only — the editor and
+   panels sit on solid surfaces above it, so code areas stay untouched. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(56rem 32rem at 12% -8%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%),
+    radial-gradient(48rem 30rem at 96% 4%, color-mix(in srgb, var(--accent-3) 5%, transparent), transparent 58%);
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* --- scrollbars ----------------------------------------------------------- */
+/* Tinted from the active palette, so a light theme never keeps dark gutters. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  background-clip: content-box;
+  border: 2px solid transparent;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* --- keyboard focus (always visible, never on mouse click) ---------------- */
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 1px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+
+/* --- small utilities ------------------------------------------------------ */
+
+.muted { color: var(--muted); }
+.tiny { font-size: 0.74rem; }
+.small-pad { padding: 0.75rem; }
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  padding: 0.1rem 0.4rem;
+}
+
+/* --- buttons --------------------------------------------------------------- */
+
+button {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) { transform: translateY(1px); transition-duration: 60ms; }
+button:focus-visible { box-shadow: var(--focus-ring); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+button.primary {
+  background: var(--accent-gradient);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+button.primary:hover:not(:disabled) { box-shadow: var(--shadow-glow); }
+
+button.secondary { background: transparent; }
+button.secondary:hover:not(:disabled) { background: var(--accent-soft); }
+
+button.danger { border-color: color-mix(in srgb, var(--error) 50%, transparent); color: var(--error); }
+button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 12%, transparent); border-color: var(--error); }
+
+button.small { padding: 0.32rem 0.65rem; border-radius: var(--radius-sm); font-size: 0.82rem; }
+
+button.icon-button {
+  display: inline-grid;
+  place-items: center;
+  padding: 0.3rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+button.icon-button svg { transition: transform var(--dur-fast) var(--ease-spring), color var(--dur-fast) var(--ease-out); }
+button.icon-button:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: transparent;
+  transform: none;
+}
+button.icon-button:hover:not(:disabled) svg { transform: scale(1.12); }
+button.icon-button.danger:hover { color: var(--error); }
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0.2rem 0.3rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.link-button.danger { color: var(--error); }
+.link-button:hover { text-decoration: underline; transform: none; box-shadow: none; }
+
+/* --- text fields ------------------------------------------------------------ */
+
+input[type="text"], input[type="password"], input[type="search"], select, textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+input[type="text"]:hover, input[type="password"]:hover, input[type="search"]:hover,
+textarea:hover, select:hover { border-color: var(--border-strong); }
+
+input::placeholder, textarea::placeholder { color: var(--faint); }
+
+/* --- checkbox & range affordances ------------------------------------------ */
+
+input[type="checkbox"] { accent-color: var(--accent); }
+input[type="range"] { accent-color: var(--accent); }
+
+input[type="checkbox"] {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--space-1);
+  background: var(--bg);
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+input[type="checkbox"]::after {
+  content: '';
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(-45deg) scale(0);
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease-spring);
+  margin-top: -1px;
+}
+input[type="checkbox"]:checked { background: var(--accent-gradient); border-color: transparent; }
+input[type="checkbox"]:checked::after { transform: rotate(-45deg) scale(1); }
+input[type="checkbox"]:focus-visible { box-shadow: var(--focus-ring); }

@@ -1,0 +1,53 @@
+/* ==========================================================================
+   NovaCode IDE — responsive desktop behavior
+   --------------------------------------------------------------------------
+   Small laptops, standard desktops, large monitors and narrow windows.
+   Side panels overlay instead of squeezing the editor below their
+   thresholds; minimum editor width is protected by the layout itself.
+   ========================================================================== */
+
+/* Narrow windows: the AI / settings panel floats above the workbench. */
+@media (max-width: 1080px) {
+  .right-panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 24px;
+    z-index: var(--z-dropdown);
+    box-shadow: var(--shadow-lg);
+    border-left: 1px solid var(--border-strong);
+  }
+  .splitter.vertical.right { display: none; }
+}
+
+/* Very narrow windows: the explorer floats over the editor too. */
+@media (max-width: 800px) {
+  .sidebar {
+    position: absolute;
+    left: 48px;
+    top: 0;
+    bottom: 24px;
+    z-index: var(--z-dropdown);
+    box-shadow: var(--shadow-lg);
+    border-right: 1px solid var(--border-strong);
+  }
+  .splitter.vertical { display: none; }
+}
+
+/* Large monitors: give panels a little more breathing room and cap extreme
+   line lengths in welcome/hero content. */
+@media (min-width: 2000px) {
+  body { font-size: 15px; }
+}
+
+/* Short windows (small laptop lids): keep the terminal usable but modest. */
+@media (max-height: 720px) {
+  .terminal-panel { min-height: 64px; }
+}
+
+/* Narrow windows: stack the welcome grid into a single column. */
+@media (max-width: 1000px) {
+  .welcome-grid { grid-template-columns: minmax(0, 1fr); }
+  .welcome-screen { padding: 1.6rem 1.25rem; }
+  .welcome-side { max-width: 460px; }
+}

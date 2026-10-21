@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# NovaCode CLI shim (macOS / Linux). Shipped inside the app bundle at
+# Contents/Resources/bin/nova (macOS) or resources/bin/nova (Linux).
+# Forward all arguments to the packaged binary; the app resolves `.`
+# against the inherited working directory, so `nova .` opens this folder.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$DIR/../../MacOS/NovaCode" "$@" 2>/dev/null || exec "$DIR/../../novacode" "$@"
