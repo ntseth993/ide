@@ -23,6 +23,18 @@ function requireDesktop() {
   }
 }
 
+/**
+ * The renderer hot-reloads, but Electron's preload/main only load at app start.
+ * When a bridge method is missing the running process is stale, so surface an
+ * actionable "restart" hint instead of a raw "X is not a function".
+ */
+function requireBridgeMethod(name, feature) {
+  requireDesktop();
+  if (typeof nova[name] !== 'function') {
+    throw new Error(`${feature} needs a NovaCode restart to load. Stop the app and run "npm run dev" again.`);
+  }
+}
+
 export const client = {
   async chooseDirectory() {
     requireDesktop();
@@ -247,5 +259,83 @@ export const client = {
   async detectRuntimes() {
     if (!nova) return { runtimes: [], detectedAt: null, unavailable: true };
     return nova.detectRuntimes();
+  },
+
+  // ---- NovaLink peer-to-peer collaboration -----------------------------------
+  // The panel renders a single state snapshot streamed from the main process.
+  // Outside Electron there is no collaboration, so status resolves to an
+  // empty, flagged snapshot and every action requires the desktop bridge.
+  async novalinkStatus() {
+    if (!nova || typeof nova.novalinkStatus !== 'function') {
+      return {
+        ready: false, unavailable: true, scanning: false, activeTransport: null,
+        identity: null, transports: [], nearby: [], requests: { incoming: [], outgoing: [] },
+        peers: [], chats: {}, transfers: [], bluetooth: null,
+      };
+    }
+    return nova.novalinkStatus();
+  },
+  async novalinkDiscover() {
+    requireDesktop();
+    return nova.novalinkDiscover();
+  },
+  async novalinkStopDiscovery() {
+    requireDesktop();
+    return nova.novalinkStopDiscovery();
+  },
+  async novalinkEnableBluetooth() {
+    requireBridgeMethod('novalinkEnableBluetooth', 'Bluetooth controls');
+    return nova.novalinkEnableBluetooth();
+  },
+  async novalinkScanBluetooth() {
+    requireBridgeMethod('novalinkScanBluetooth', 'Bluetooth device scanning');
+    return nova.novalinkScanBluetooth();
+  },
+  async novalinkConnect(peerId) {
+    requireDesktop();
+    return nova.novalinkConnect(peerId);
+  },
+  async novalinkAcceptConnection(peerId) {
+    requireDesktop();
+    return nova.novalinkAcceptConnection(peerId);
+  },
+  async novalinkRejectConnection(peerId) {
+    requireDesktop();
+    return nova.novalinkRejectConnection(peerId);
+  },
+  async novalinkDisconnect(peerId) {
+    requireDesktop();
+    return nova.novalinkDisconnect(peerId);
+  },
+  async novalinkSendMessage(peerId, text) {
+    requireDesktop();
+    return nova.novalinkSendMessage(peerId, text);
+  },
+  async novalinkShareCode(payload) {
+    requireDesktop();
+    return nova.novalinkShareCode(payload);
+  },
+  async novalinkShareFile(payload) {
+    requireDesktop();
+    return nova.novalinkShareFile(payload);
+  },
+  async novalinkAcceptTransfer(transferId) {
+    requireDesktop();
+    return nova.novalinkAcceptTransfer(transferId);
+  },
+  async novalinkRejectTransfer(transferId) {
+    requireDesktop();
+    return nova.novalinkRejectTransfer(transferId);
+  },
+  async novalinkCancelTransfer(transferId) {
+    requireDesktop();
+    return nova.novalinkCancelTransfer(transferId);
+  },
+  async novalinkSaveTransfer(payload) {
+    requireDesktop();
+    return nova.novalinkSaveTransfer(payload);
+  },
+  onNovaLinkEvent(callback) {
+    return nova?.onNovaLinkEvent ? nova.onNovaLinkEvent(callback) : () => {};
   },
 };

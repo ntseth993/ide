@@ -141,6 +141,20 @@
 .ext-status.tone-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
 .ext-status.tone-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
 
+/* Right-side badge stack: status pill plus an optional source tag. */
+.ext-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; flex: none; }
+.ext-tag {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 0.04rem 0.4rem;
+  white-space: nowrap;
+}
+
 .ext-actions { display: flex; gap: 0.4rem; align-items: center; }
 
 .ext-details {

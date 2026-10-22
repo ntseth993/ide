@@ -1,6 +1,6 @@
 {
   "name": "novacode-ide",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "NovaCode IDE - AI-powered desktop development environment",
   "main": "electron/main.js",
   "bin": {
@@ -20,6 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "installer:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/make-installer-assets.ps1",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win"
   },
@@ -85,13 +86,20 @@
           ]
         }
       ],
+      "icon": "build/icon.png",
       "artifactName": "NovaCode-Setup-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "NovaCode"
+      "shortcutName": "NovaCode",
+      "installerIcon": "build/installerIcon.ico",
+      "uninstallerIcon": "build/uninstallerIcon.ico",
+      "installerHeader": "build/installerHeader.bmp",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "include": "build/installer.nsh"
     },
     "mac": {
       "target": [
@@ -104,6 +112,7 @@
         }
       ],
       "artifactName": "NovaCode-macOS-${arch}.${ext}",
+      "icon": "build/icon.png",
       "category": "public.app-category.developer-tools"
     },
     "linux": {
@@ -113,6 +122,7 @@
         "rpm"
       ],
       "artifactName": "NovaCode-Linux-${arch}.${ext}",
+      "icon": "build/icon.png",
       "category": "Development",
       "executableName": "novacode"
     }

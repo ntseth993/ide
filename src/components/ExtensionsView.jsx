@@ -38,9 +38,14 @@ function ExtensionCard({ entry, installed, busyId, onInstall, onToggle, onUpdate
           </span>
           <span className="ext-desc">{manifest.description}</span>
         </div>
-        <span className={`ext-status ${enabled ? 'tone-ok' : isInstalled ? 'tone-warn' : 'tone-muted'}`}>
-          {isInstalled ? (enabled ? 'Enabled' : 'Disabled') : 'Not installed'}
-        </span>
+        <div className="ext-badges">
+          <span className={`ext-status ${enabled ? 'tone-ok' : isInstalled ? 'tone-warn' : 'tone-muted'}`}>
+            {isInstalled ? (enabled ? 'Enabled' : 'Disabled') : 'Not installed'}
+          </span>
+          {isInstalled && installed.source === 'registry' && (
+            <span className="ext-tag" title="Installed from the Open VSX marketplace">downloaded</span>
+          )}
+        </div>
       </div>
 
       <div className="ext-actions">
@@ -107,7 +112,10 @@ function MarketplaceIcon({ item }) {
   );
 }
 
-function MarketplaceCard({ item, busy, installed, onInstall, onOpen }) {
+function MarketplaceCard({ item, busy, installed, onInstall, onOpenExternal }) {
+  const [open, setOpen] = useState(false);
+  const categories = Array.isArray(item.categories) ? item.categories : [];
+  const tags = Array.isArray(item.tags) ? item.tags.slice(0, 8) : [];
   return (
     <article className={`ext-card ext-market${busy ? ' busy' : ''}`}>
       <div className="ext-card-main">
@@ -127,10 +135,23 @@ function MarketplaceCard({ item, busy, installed, onInstall, onOpen }) {
         <button type="button" className="small" disabled={busy || installed} onClick={() => onInstall(item)}>
           {installed ? 'Installed' : (busy ? 'Installing…' : 'Install')}
         </button>
-        <button type="button" className="small secondary" onClick={() => onOpen(item)}>
-          Details
+        <button type="button" className="icon-button" aria-expanded={open} title="Details" onClick={() => setOpen((value) => !value)}>
+          <ChevronIcon open={open} size={14} />
         </button>
       </div>
+      {open && (
+        <div className="ext-details">
+          <div><span className="muted">Publisher:</span> {item.publisher}</div>
+          <div><span className="muted">Version:</span> {item.version}</div>
+          <div><span className="muted">Installs:</span> {formatDownloads(item.downloadCount)}</div>
+          <div><span className="muted">Categories:</span> {categories.length ? categories.join(', ') : '—'}</div>
+          {tags.length > 0 && <div><span className="muted">Tags:</span> {tags.join(', ')}</div>}
+          <div className="muted tiny">
+            NovaCode imports only the declarative subset it supports (themes, snippets, formatter flags). It never downloads or runs extension code.
+          </div>
+          <button type="button" className="small secondary" onClick={() => onOpenExternal(item)}>View on Open VSX</button>
+        </div>
+      )}
     </article>
   );
 }
@@ -279,7 +300,7 @@ export default function ExtensionsView({
           busy={marketBusyId === item.id}
           installed={installedIds.has(item.id) || installedIds.has(`${item.namespace}.${item.name}`)}
           onInstall={handleInstallMarket}
-          onOpen={handleOpenMarket}
+          onOpenExternal={handleOpenMarket}
         />
       ))}
 

@@ -56,6 +56,72 @@
 }
 .ai-tab-actions { display: flex; align-items: center; gap: 0.15rem; padding-bottom: 0.15rem; }
 
+/* --- recent chats dropdown (Add / Recent / Delete) ------------------------- */
+.ai-recent-wrap { position: relative; }
+.ai-recent-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 264px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  animation: nc-dropdown-in var(--dur-fast) var(--ease-out) both;
+}
+.ai-recent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.25rem 0.4rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ai-recent-clear {
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font-size: 0.7rem;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.ai-recent-clear:hover { color: var(--error); box-shadow: none; transform: none; }
+.ai-recent-empty { margin: 0.2rem 0.4rem 0.4rem; color: var(--muted); font-size: 0.78rem; }
+.ai-recent-item { display: flex; align-items: center; gap: 0.2rem; border-radius: var(--radius-sm); }
+.ai-recent-item:hover { background: var(--surface-2); }
+.ai-recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.35rem 0.45rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.ai-recent-open.active { color: var(--accent-2); }
+.ai-recent-title { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; font-weight: 600; }
+.ai-recent-time { font-size: 0.68rem; }
+.ai-recent-delete { flex: none; opacity: 0; }
+.ai-recent-item:hover .ai-recent-delete, .ai-recent-delete:focus-visible { opacity: 1; }
+.ai-recent-delete:hover { color: var(--error); }
+
 /* --- hero (empty state) ---------------------------------------------------- */
 
 .ai-hero {

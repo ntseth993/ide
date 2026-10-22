@@ -195,6 +195,18 @@ export const SignOutIcon = (props) => (
   </Svg>
 );
 
+export const MaximizeIcon = (props) => (
+  <Svg {...props}>
+    <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
+  </Svg>
+);
+
+export const MinimizeIcon = (props) => (
+  <Svg {...props}>
+    <path d="M8 3v5a1 1 0 0 1-1 1H3M16 3v5a1 1 0 0 0 1 1h4M21 16h-4a1 1 0 0 0-1 1v4M3 16h4a1 1 0 0 1 1 1v4" />
+  </Svg>
+);
+
 export const ChevronDownIcon = (props) => (
   <Svg {...props}>
     <path d="m6 9 6 6 6-6" />
@@ -214,5 +226,37 @@ export const NovaMarkIcon = (props) => (
     <path d="M12 3c4 3 6 6 6 9a6 6 0 0 1-12 0c0-1.5.6-3 1.8-4.4" />
     <path d="M12 21c-3-2-4.5-4.5-4.5-7.5A7.5 7.5 0 0 1 12 4" />
     <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/* NovaLink — two peers linked by a peer-to-peer channel. */
+export const NovaLinkIcon = (props) => (
+  <Svg {...props}>
+    <circle cx="5.5" cy="6" r="2.4" />
+    <circle cx="18.5" cy="6" r="2.4" />
+    <circle cx="12" cy="18" r="2.4" />
+    <path d="M7.6 7.3 10.3 16M16.4 7.3 13.7 16M8 6h8" />
+  </Svg>
+);
+
+export const BluetoothIcon = (props) => (
+  <Svg {...props}>
+    <path d="m7 7 10 10-5 4V3l5 4L7 17" />
+  </Svg>
+);
+
+export const NetworkIcon = (props) => (
+  <Svg {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18" />
+  </Svg>
+);
+
+export const ShareIcon = (props) => (
+  <Svg {...props}>
+    <circle cx="18" cy="5" r="2.5" />
+    <circle cx="6" cy="12" r="2.5" />
+    <circle cx="18" cy="19" r="2.5" />
+    <path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" />
   </Svg>
 );

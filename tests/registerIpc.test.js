@@ -57,6 +57,24 @@ const services = {
   runtime: {
     detectAll: vi.fn(async () => ({ runtimes: [], detectedAt: '2026-10-18T00:00:00.000Z' })),
   },
+  novalink: {
+    getStatus: vi.fn(async () => ({ ready: true, peers: [], transfers: [] })),
+    discover: vi.fn(async () => ({ ok: true })),
+    stopScan: vi.fn(async () => ({ ok: true })),
+    enableBluetooth: vi.fn(async () => ({ ok: true, detail: 'Bluetooth adapter enabled.' })),
+    scanBluetoothDevices: vi.fn(async () => ({ ok: true, power: 'on', devices: [], scannedAt: Date.now() })),
+    connect: vi.fn(async (peerId) => ({ ok: true, peerId })),
+    acceptConnection: vi.fn(async (peerId) => ({ ok: true, peerId })),
+    rejectConnection: vi.fn(async (peerId) => ({ ok: true, peerId })),
+    disconnect: vi.fn(async (peerId) => ({ ok: true, peerId })),
+    sendMessage: vi.fn(async (peerId, text) => ({ ok: true, peerId, text })),
+    shareCode: vi.fn(async (payload) => ({ ok: true, ...payload })),
+    shareFile: vi.fn(async (payload) => ({ ok: true, ...payload })),
+    acceptTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
+    rejectTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
+    cancelTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
+    saveTransfer: vi.fn(async (transferId, opts) => ({ ok: true, transferId, ...opts })),
+  },
   terminal: { start: vi.fn(), cancel: vi.fn(), profiles: vi.fn(() => ({ platform: 'win32', defaultId: 'powershell', profiles: [{ id: 'powershell', label: 'PowerShell', default: true }] })) },
   settings: { load: vi.fn(async () => ({})), save: vi.fn(async () => ({})) },
   secretStore: { setSecret: vi.fn(), clearSecret: vi.fn(), getSecretSource: vi.fn(async () => null) },
@@ -95,7 +113,7 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    expect(channels.size).toBe(44);
+    expect(channels.size).toBe(60);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -106,8 +124,8 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(44);
-    expect(result.channelCount).toBe(44);
+    expect(secondChannels.size).toBe(60);
+    expect(result.channelCount).toBe(60);
   });
 
   it('exposes the provider catalog and account channels', async () => {
@@ -243,6 +261,23 @@ describe('IPC argument contract', () => {
     // The channel is always invoked with a payload object, never a bare event.
     await call('ai:complete');
     expect(services.ai.complete).toHaveBeenLastCalledWith({});
+  });
+
+  it('routes NovaLink actions to the service and validates ids', async () => {
+    await call('novalink:discover');
+    expect(services.novalink.discover).toHaveBeenCalledTimes(1);
+    await call('novalink:enable-bluetooth');
+    expect(services.novalink.enableBluetooth).toHaveBeenCalledTimes(1);
+    await call('novalink:scan-bluetooth');
+    expect(services.novalink.scanBluetoothDevices).toHaveBeenCalledTimes(1);
+    await call('novalink:connect', { peerId: ' peer-1 ' });
+    expect(services.novalink.connect).toHaveBeenCalledWith('peer-1');
+    await call('novalink:send-message', { peerId: 'peer-1', text: 'hi' });
+    expect(services.novalink.sendMessage).toHaveBeenCalledWith('peer-1', 'hi');
+    await call('novalink:save-transfer', { transferId: 't-1', root: 'C:\\w', dir: 'NovaLink', name: 'a.txt', overwrite: true });
+    expect(services.novalink.saveTransfer).toHaveBeenCalledWith('t-1', { root: 'C:\\w', dir: 'NovaLink', name: 'a.txt', overwrite: true });
+    await expect(call('novalink:connect', { peerId: '   ' })).rejects.toThrow(/peer id is required/i);
+    await expect(call('novalink:accept-transfer', {})).rejects.toThrow(/transfer id is required/i);
   });
 
   it('guard errors propagate with their message', async () => {

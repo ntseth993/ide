@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { client, toUserMessage } from '../services/novaClient';
 import * as bus from '../services/bus';
 import { joinPath, normalizePath, parentPath } from '../utils/pathUtils';
-import { PlayIcon, StopIcon, TrashIcon, MoreIcon, ChevronDownIcon, PlusIcon, CloseIcon } from './Icons';
+import { PlayIcon, StopIcon, TrashIcon, MoreIcon, ChevronDownIcon, PlusIcon, CloseIcon, MaximizeIcon, MinimizeIcon } from './Icons';
 
 /** Terminal "More actions" menu — every enabled entry maps to a command id in
  *  App's shared registry, mirroring the top menu bar's Terminal submenu. */
@@ -197,7 +197,9 @@ function ProfileMenu({ profiles, activeId, onSelect }) {
 export default function TerminalPanel({ root, height, visible, commands = [], problems = [], onOpenProblem, onClose }) {
   const [lines, setLines] = useState([{ type: 'system', text: 'NovaCode terminal ready.' }]);
   const [activeTab, setActiveTab] = useState('terminal');
-  const [maximized, setMaximized] = useState(false);
+  // Panel size: 'normal' (user height), 'max' (fills the editor column),
+  // 'min' (collapsed to just the header bar).
+  const [sizeState, setSizeState] = useState('normal');
   const [cwd, setCwd] = useState(() => normalizePath(root));
   const [platform, setPlatform] = useState('');
   const [command, setCommand] = useState('');
@@ -295,8 +297,19 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
         setLastExit(null);
       }),
       bus.subscribe('terminal:new', () => {
-        setLines((current) => (current.length ? current : [{ type: 'system', text: 'NovaCode terminal ready.' }]));
-        inputRef.current?.focus();
+        // A fresh shell session: clear the buffer, reset the working directory
+        // back to the workspace root, and focus the prompt so it feels like a
+        // newly opened terminal rather than a no-op.
+        setSizeState((state) => (state === 'min' ? 'normal' : state));
+        setActiveTab('terminal');
+        setLines([{ type: 'system', text: 'NovaCode terminal ready.' }]);
+        setLastExit(null);
+        setCommand('');
+        setCwd(normalizePath(rootRef.current));
+        requestAnimationFrame(() => inputRef.current?.focus());
+      }),
+      bus.subscribe('panel:tab', ({ tab } = {}) => {
+        if (tab) setActiveTab(tab);
       }),
       bus.subscribe('terminal:stop', () => {
         if (runningRef.current) client.cancelTerminal(runningRef.current);
@@ -458,13 +471,17 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
 
   if (!visible) return null;
 
+  const isMax = sizeState === 'max';
+  const isMin = sizeState === 'min';
+  const panelHeight = isMax ? '72%' : isMin ? undefined : height;
+
   const outputLines = lines.filter((line) => line.type !== 'command');
   const problemCount = problems.length;
 
   return (
     <section
-      className={`terminal-panel${maximized ? ' maximized' : ''}`}
-      style={{ height: maximized ? '62vh' : height }}
+      className={`terminal-panel${isMax ? ' maximized' : ''}${isMin ? ' minimized' : ''}`}
+      style={{ height: panelHeight }}
       aria-label="Panel"
     >
       <div className="panel-header panel-header-tabs">
@@ -531,12 +548,23 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
           )}
           <button
             type="button"
-            className="icon-button"
-            title={maximized ? 'Restore panel' : 'Maximize panel'}
-            aria-label={maximized ? 'Restore panel' : 'Maximize panel'}
-            onClick={() => setMaximized((value) => !value)}
+            className={isMax ? 'icon-button is-active' : 'icon-button'}
+            title={isMax ? 'Restore panel size' : 'Maximize panel'}
+            aria-label={isMax ? 'Restore panel size' : 'Maximize panel'}
+            aria-pressed={isMax}
+            onClick={() => setSizeState((state) => (state === 'max' ? 'normal' : 'max'))}
           >
-            <ChevronDownIcon size={15} style={{ transform: maximized ? 'rotate(180deg)' : 'none', transition: 'transform var(--dur-fast) var(--ease-out)' }} />
+            <MaximizeIcon size={15} />
+          </button>
+          <button
+            type="button"
+            className={isMin ? 'icon-button is-active' : 'icon-button'}
+            title={isMin ? 'Restore panel' : 'Minimize panel'}
+            aria-label={isMin ? 'Restore panel' : 'Minimize panel'}
+            aria-pressed={isMin}
+            onClick={() => setSizeState((state) => (state === 'min' ? 'normal' : 'min'))}
+          >
+            <MinimizeIcon size={15} />
           </button>
           <button
             type="button"

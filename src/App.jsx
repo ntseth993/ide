@@ -22,6 +22,7 @@ import { PromptDialog, ConfirmDialog } from './components/Dialogs';
 import WelcomeScreen from './components/WelcomeScreen';
 import HistoryPanel from './components/HistoryPanel';
 import ExtensionsView from './components/ExtensionsView';
+import NovaLinkView from './components/NovaLinkView';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import SignInDialog from './components/SignInDialog';
 import * as bus from './services/bus';
@@ -826,6 +827,21 @@ export default function App() {
     return () => { active = false; };
   }, [rightMode, runtimes]);
 
+  // ---- NovaLink -------------------------------------------------------------
+  // Read the current editor selection so the NovaLink panel can offer "Share
+  // Selected Code" without the renderer component ever touching Monaco state.
+  const getEditorSelection = useCallback(() => {
+    const editor = editorApiRef.current?.editor;
+    if (!editor || editor.isDisposed?.()) return null;
+    const model = editor.getModel?.();
+    const selection = editor.getSelection?.();
+    if (!model || !selection || selection.isEmpty?.()) return null;
+    const text = model.getValueInRange(selection);
+    if (!text) return null;
+    const path = activeRef.current ? normalizePath(activeRef.current) : '';
+    return { text, language: model.getLanguageId?.() || '', path };
+  }, []);
+
   // ---- commands & hotkeys ----------------------------------------------------------
   // Switching theme also adopts that theme accent, which is what makes a
   // "Dragon" or "Flowers" switch feel complete; the accent stays editable after.
@@ -899,8 +915,27 @@ export default function App() {
       { id: 'view.explorer', label: 'View: Explorer', hint: 'Ctrl+Shift+E', run: () => { setLeftView('explorer'); setSidebarVisible(true); } },
       { id: 'view.search', label: 'View: Search', run: () => { setLeftView('search'); setSidebarVisible(true); } },
       { id: 'view.extensions', label: 'View: Extensions', hint: 'Ctrl+Shift+X', run: () => { setLeftView('extensions'); setSidebarVisible(true); } },
+      { id: 'view.novalink', label: 'View: NovaLink (peer collaboration)', run: () => { setLeftView('novalink'); setSidebarVisible(true); } },
       { id: 'toggle-terminal', label: 'View: Toggle Terminal', hint: 'Ctrl+`', run: () => setLayout({ terminalVisible: !layout.terminalVisible }) },
       { id: 'view.terminal', label: 'View: Terminal', run: () => setLayout({ terminalVisible: true }) },
+      {
+        id: 'view.problems',
+        label: 'View: Problems',
+        hint: 'Ctrl+Shift+M',
+        run: () => { setLayout({ terminalVisible: true }); bus.emit('panel:tab', { tab: 'problems' }); },
+      },
+      {
+        id: 'view.output',
+        label: 'View: Output',
+        hint: 'Ctrl+Shift+U',
+        run: () => { setLayout({ terminalVisible: true }); bus.emit('panel:tab', { tab: 'output' }); },
+      },
+      {
+        id: 'view.debug',
+        label: 'View: Debug Console',
+        hint: 'Ctrl+Shift+Y',
+        run: () => { setLayout({ terminalVisible: true }); bus.emit('panel:tab', { tab: 'debug' }); },
+      },
       { id: 'toggle-sidebar', label: 'View: Toggle Sidebar', hint: 'Ctrl+B', run: () => setSidebarVisible((visible) => !visible) },
       { id: 'toggle-ai', label: 'View: Toggle AI Panel', run: () => setRightMode((mode) => (mode === 'ai' ? 'none' : 'ai')) },
       { id: 'view.ai', label: 'View: AI Assistant', hint: 'Ctrl+Shift+A', run: () => setRightMode('ai') },
@@ -1035,6 +1070,13 @@ export default function App() {
                       onUninstall={handleUninstallExtension}
                       onInstalled={refreshExtensions}
                     />
+                  ) : leftView === 'novalink' ? (
+                    <NovaLinkView
+                      workspaceRoot={workspaceRoot}
+                      activeFilePath={activePath}
+                      getEditorSelection={getEditorSelection}
+                      onNotify={notify}
+                    />
                   ) : (
                     <SearchPanel root={workspaceRoot} onOpenResult={(filePath, line) => openFile(filePath, line)} />
                   )}
@@ -1098,6 +1140,13 @@ export default function App() {
                         onUpdate={handleUpdateExtension}
                         onUninstall={handleUninstallExtension}
                         onInstalled={refreshExtensions}
+                      />
+                    ) : leftView === 'novalink' ? (
+                      <NovaLinkView
+                        workspaceRoot={workspaceRoot}
+                        activeFilePath={activePath}
+                        getEditorSelection={getEditorSelection}
+                        onNotify={notify}
                       />
                     ) : (
                       <SearchPanel

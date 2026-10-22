@@ -97,6 +97,9 @@ function buildMenuTemplate({ send, showAbout, showDocs }) {
         { label: 'Run and Debug (coming soon)', enabled: false },
         { type: 'separator' },
         { label: 'Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('view.terminal') },
+        { label: 'Problems', accelerator: 'CmdOrCtrl+Shift+M', click: () => send('view.problems') },
+        { label: 'Output', accelerator: 'CmdOrCtrl+Shift+U', click: () => send('view.output') },
+        { label: 'Debug Console', accelerator: 'CmdOrCtrl+Shift+Y', click: () => send('view.debug') },
         { label: 'AI Assistant', accelerator: 'CmdOrCtrl+Shift+A', click: () => send('view.ai') },
         { label: 'Change History', click: () => send('view.history') },
         { type: 'separator' },
@@ -147,7 +150,7 @@ function buildMenuTemplate({ send, showAbout, showDocs }) {
 const MENU_COMMANDS = [
   'new-file', 'new-folder', 'open-folder', 'save', 'save-as', 'save-all', 'close-editor',
   'editor.find', 'editor.replace', 'editor.expand-selection', 'editor.cursor-below', 'editor.cursor-above',
-  'view.explorer', 'view.search', 'view.extensions', 'view.terminal', 'view.ai', 'view.history', 'view.settings',
+  'view.explorer', 'view.search', 'view.extensions', 'view.terminal', 'view.problems', 'view.output', 'view.debug', 'view.ai', 'view.history', 'view.settings',
   'open-palette', 'editor.goto-line', 'editor.goto-definition',
   'run.file', 'run.stop', 'terminal.new', 'terminal.clear', 'help.shortcuts',
 ];

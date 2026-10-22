@@ -90,6 +90,25 @@ const api = {
 
   // language runtimes
   detectRuntimes: () => invoke('runtime:detect'),
+
+  // NovaLink peer-to-peer collaboration (narrow, validated channels only).
+  novalinkStatus: () => invoke('novalink:status'),
+  novalinkDiscover: () => invoke('novalink:discover'),
+  novalinkStopDiscovery: () => invoke('novalink:stop-discovery'),
+  novalinkEnableBluetooth: () => invoke('novalink:enable-bluetooth'),
+  novalinkScanBluetooth: () => invoke('novalink:scan-bluetooth'),
+  novalinkConnect: (peerId) => invoke('novalink:connect', { peerId }),
+  novalinkAcceptConnection: (peerId) => invoke('novalink:accept-connection', { peerId }),
+  novalinkRejectConnection: (peerId) => invoke('novalink:reject-connection', { peerId }),
+  novalinkDisconnect: (peerId) => invoke('novalink:disconnect', { peerId }),
+  novalinkSendMessage: (peerId, text) => invoke('novalink:send-message', { peerId, text }),
+  novalinkShareCode: (payload) => invoke('novalink:share-code', payload),
+  novalinkShareFile: (payload) => invoke('novalink:share-file', payload),
+  novalinkAcceptTransfer: (transferId) => invoke('novalink:accept-transfer', { transferId }),
+  novalinkRejectTransfer: (transferId) => invoke('novalink:reject-transfer', { transferId }),
+  novalinkCancelTransfer: (transferId) => invoke('novalink:cancel-transfer', { transferId }),
+  novalinkSaveTransfer: (payload) => invoke('novalink:save-transfer', payload),
+  onNovaLinkEvent: (callback) => subscribe('novalink:event', callback),
 };
 
 contextBridge.exposeInMainWorld('novaApi', api);

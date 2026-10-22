@@ -34,6 +34,7 @@ function registerIpc({
   extensions,
   registry,
   runtime,
+  novalink,
   terminal,
   // Optional: without it the theme still works in content, just not in chrome.
   applyAppearance = () => ({ ok: false }),
@@ -305,6 +306,48 @@ function registerIpc({
   // --- language runtimes -------------------------------------------------------
   if (runtime) {
     handle('runtime:detect', async () => runtime.detectAll());
+  }
+
+  // --- NovaLink peer-to-peer collaboration -----------------------------------
+  // Every id-shaped argument is validated as a non-empty string before it
+  // reaches the service; the service then confines all filesystem work to the
+  // workspace via pathGuard. No raw Node/fs or IPC objects ever reach React.
+  if (novalink) {
+    const requireId = (value, label) => {
+      if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
+      return value.trim();
+    };
+
+    handle('novalink:status', () => novalink.getStatus());
+    handle('novalink:discover', () => novalink.discover());
+    handle('novalink:stop-discovery', () => novalink.stopScan());
+    handle('novalink:enable-bluetooth', () => novalink.enableBluetooth());
+    handle('novalink:scan-bluetooth', () => novalink.scanBluetoothDevices());
+    handle('novalink:connect', (_event, { peerId } = {}) => novalink.connect(requireId(peerId, 'A peer id')));
+    handle('novalink:accept-connection', (_event, { peerId } = {}) => novalink.acceptConnection(requireId(peerId, 'A peer id')));
+    handle('novalink:reject-connection', (_event, { peerId } = {}) => novalink.rejectConnection(requireId(peerId, 'A peer id')));
+    handle('novalink:disconnect', (_event, { peerId } = {}) => novalink.disconnect(requireId(peerId, 'A peer id')));
+    handle('novalink:send-message', (_event, { peerId, text } = {}) => novalink.sendMessage(requireId(peerId, 'A peer id'), typeof text === 'string' ? text : ''));
+    handle('novalink:share-code', (_event, payload = {}) => novalink.shareCode({
+      peerId: requireId(payload.peerId, 'A peer id'),
+      text: typeof payload.text === 'string' ? payload.text : '',
+      language: typeof payload.language === 'string' ? payload.language : '',
+      path: typeof payload.path === 'string' ? payload.path : '',
+    }));
+    handle('novalink:share-file', (_event, payload = {}) => novalink.shareFile({
+      peerId: requireId(payload.peerId, 'A peer id'),
+      root: typeof payload.root === 'string' ? payload.root : '',
+      path: typeof payload.path === 'string' ? payload.path : '',
+    }));
+    handle('novalink:accept-transfer', (_event, { transferId } = {}) => novalink.acceptTransfer(requireId(transferId, 'A transfer id')));
+    handle('novalink:reject-transfer', (_event, { transferId } = {}) => novalink.rejectTransfer(requireId(transferId, 'A transfer id')));
+    handle('novalink:cancel-transfer', (_event, { transferId } = {}) => novalink.cancelTransfer(requireId(transferId, 'A transfer id')));
+    handle('novalink:save-transfer', (_event, payload = {}) => novalink.saveTransfer(requireId(payload.transferId, 'A transfer id'), {
+      root: typeof payload.root === 'string' ? payload.root : '',
+      dir: typeof payload.dir === 'string' ? payload.dir : '',
+      name: typeof payload.name === 'string' ? payload.name : '',
+      overwrite: Boolean(payload.overwrite),
+    }));
   }
 
   return { channelCount: handlers.size };

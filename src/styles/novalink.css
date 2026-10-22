@@ -1,0 +1,244 @@
+/* ==========================================================================
+   NovaLink — peer-to-peer collaboration panel
+   --------------------------------------------------------------------------
+   Built entirely from NovaCode's design tokens (variables.css), so it tracks
+   every theme automatically. Reuses global button variants (.small, .primary,
+   .danger, .icon-button) and utility text classes (.muted, .tiny).
+   ========================================================================== */
+
+.novalink-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.7rem 0.8rem 1.1rem;
+  overflow-y: auto;
+  height: 100%;
+}
+.novalink-panel .panel-header { margin-bottom: 0; }
+.nl-title { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+.nl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border);
+  animation: nc-fade-in var(--dur-base) var(--ease-out) both;
+}
+.nl-h {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+.nl-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
+.nl-scanning { animation: nl-pulse 1.4s ease-in-out infinite; }
+
+.nl-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.nl-note { line-height: 1.45; margin: 0; }
+.nl-error {
+  position: relative;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--error) 82%, var(--text));
+  background: color-mix(in srgb, var(--error) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.65rem 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+  animation: nc-fade-in var(--dur-fast) var(--ease-out) both;
+}
+
+/* --- identity + transports ------------------------------------------------ */
+.nl-identity { display: flex; flex-direction: column; gap: 0.1rem; }
+.nl-identity-name { font-size: 0.86rem; font-weight: 600; }
+.nl-transports { display: flex; flex-direction: column; gap: 0.4rem; }
+.nl-transport {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 0.5rem 0.6rem;
+}
+.nl-transport.unsupported { opacity: 0.82; }
+.nl-transport-icon {
+  flex: none;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--accent);
+}
+.nl-transport.unsupported .nl-transport-icon { color: var(--faint); }
+.nl-transport-body { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+.nl-transport-name { font-size: 0.82rem; font-weight: 600; }
+.nl-transport-state { font-size: 0.72rem; font-weight: 600; }
+.nl-transport-state.ok { color: var(--ok); }
+.nl-transport-state.off { color: var(--warn); }
+.nl-transport-adapter, .nl-transport-detail { overflow-wrap: anywhere; }
+
+/* --- nearby / requests / peers ------------------------------------------- */
+.nl-nearby, .nl-request, .nl-peer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 0.4rem 0.5rem;
+}
+.nl-request { flex-direction: column; align-items: stretch; gap: 0.4rem; }
+.nl-request.outgoing { background: var(--surface-2); }
+.nl-request-meta, .nl-nearby-meta { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.nl-request-name, .nl-nearby-name, .nl-peer-name {
+  font-size: 0.82rem; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nl-request-actions { display: flex; gap: 0.4rem; }
+
+.nl-peer { padding: 0; border: none; background: none; gap: 0.4rem; }
+.nl-peer.active { padding: 0.15rem; border-radius: var(--radius-sm); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.nl-peer-main {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.5rem;
+  text-align: left; color: var(--text); cursor: pointer;
+}
+.nl-peer-main:hover:not(:disabled) { border-color: var(--border-strong); }
+.nl-peer-avatar {
+  flex: none; width: 26px; height: 26px; border-radius: var(--radius-full);
+  display: grid; place-items: center; font-weight: 700; font-size: 0.8rem;
+  background: var(--accent-gradient); color: #fff;
+}
+.nl-peer-meta { display: flex; flex-direction: column; min-width: 0; }
+
+/* --- chat ----------------------------------------------------------------- */
+.nl-chat { gap: 0.45rem; }
+.nl-messages {
+  display: flex; flex-direction: column; gap: 0.4rem;
+  max-height: 240px; overflow-y: auto;
+  padding: 0.35rem; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.nl-msg { display: flex; }
+.nl-msg.me { justify-content: flex-end; }
+.nl-msg.peer { justify-content: flex-start; }
+.nl-msg-bubble {
+  max-width: 90%;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.nl-msg.me .nl-msg-bubble { background: var(--accent-soft); border-color: var(--accent-line); }
+.nl-msg-code {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface-3);
+}
+.nl-msg-code-head {
+  display: flex; justify-content: space-between; gap: 0.5rem;
+  padding: 0.2rem 0.4rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.nl-msg-code-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nl-msg-code pre, .nl-preview pre {
+  margin: 0; padding: 0.45rem 0.5rem;
+  font-family: var(--font-mono); font-size: 0.74rem;
+  overflow-x: auto; white-space: pre;
+}
+
+.nl-compose { display: flex; gap: 0.4rem; align-items: center; }
+.nl-compose input {
+  flex: 1; min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 0.42rem 0.6rem;
+  font-size: 0.82rem;
+}
+.nl-compose input:focus { border-color: var(--accent-line); }
+.nl-share { margin-top: 0.15rem; }
+
+/* --- transfers ------------------------------------------------------------ */
+.nl-transfer {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 0.5rem 0.6rem;
+}
+.nl-transfer.in { border-left: 3px solid var(--info); }
+.nl-transfer.out { border-left: 3px solid var(--accent); }
+.nl-transfer-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.nl-transfer-title { font-size: 0.84rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nl-transfer-status {
+  flex: none; font-size: 0.66rem; font-weight: 600;
+  padding: 0.1rem 0.45rem; border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+.tone-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.tone-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.tone-info { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); background: color-mix(in srgb, var(--info) 8%, transparent); }
+.tone-error { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); background: color-mix(in srgb, var(--error) 8%, transparent); }
+.tone-muted { color: var(--muted); }
+
+.nl-progress { height: 6px; border-radius: var(--radius-full); background: var(--surface-3); overflow: hidden; }
+.nl-progress-bar { height: 100%; background: var(--accent-gradient); border-radius: inherit; transition: width var(--dur-base) var(--ease-out); }
+
+.nl-transfer-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.nl-preview {
+  max-height: 160px; overflow: auto;
+  margin: 0; padding: 0.45rem 0.5rem;
+  font-family: var(--font-mono); font-size: 0.72rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  white-space: pre; overflow-wrap: normal;
+}
+.nl-save { display: flex; flex-direction: column; gap: 0.35rem; }
+.nl-save-field { display: flex; flex-direction: column; gap: 0.15rem; }
+.nl-save-field input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 0.36rem 0.5rem;
+  font-size: 0.8rem;
+}
+.nl-save-field input:focus { border-color: var(--accent-line); }
+.nl-save-check { display: flex; align-items: center; gap: 0.4rem; }
+.nl-transfer-saved { color: var(--ok); overflow-wrap: anywhere; }
+.nl-transfer-error { color: var(--error); }
+
+@keyframes nl-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* --- Bluetooth surrounding-device discovery ------------------------------- */
+.nl-bt-power { font-size: 0.72rem; font-weight: 600; }
+.nl-bt-power.ok { color: var(--ok); }
+.nl-bt-power.off { color: var(--warn); }
+.nl-bt-devices { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.45rem; }
+.nl-bt-badge {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.35rem;
+  white-space: nowrap;
+}

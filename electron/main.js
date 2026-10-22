@@ -25,6 +25,7 @@ const { createAuthService } = require('./services/authService');
 const { createAuthFlow } = require('./services/authFlow');
 const fsService = require('./services/fsService');
 const { createAiService } = require('./services/aiService');
+const { createNovaLink } = require('./services/novalink');
 const { registerIpc } = require('./ipc/registerIpc');
 const { buildMenuTemplate } = require('./menu');
 const { loadEnv } = require('./services/env');
@@ -48,6 +49,7 @@ let extensionService = null;
 let runtimeService = null;
 let authService = null;
 let authFlow = null;
+let novalinkService = null;
 let pendingOpenRequest = null;
 
 // CLI entry (`nova`, `nova .`, `nova <folder|file>`): parse the launcher's
@@ -407,6 +409,15 @@ function wireServices() {
 
   runtimeService = createRuntimeService({ logger });
 
+  // NovaLink peer-to-peer collaboration (local-network transport + an honest
+  // Bluetooth transport). It streams a single state snapshot to the renderer.
+  novalinkService = createNovaLink({
+    userDataDir: USER_DATA,
+    logger,
+    onEvent: (payload) => mainWindow?.webContents.send('novalink:event', payload),
+  }).service;
+  novalinkService.start().catch((error) => logger.error('novalink start failed', { error: error.message }));
+
   return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow };
 }
 
@@ -444,6 +455,7 @@ if (!gotLock) {
       extensions,
       registry,
       runtime,
+      novalink: novalinkService,
       applyAppearance,
       logger,
     });
@@ -470,5 +482,6 @@ if (!gotLock) {
     terminalService?.dispose();
     aiService?.dispose();
     authFlow?.cancel?.();
+    novalinkService?.dispose();
   });
 }

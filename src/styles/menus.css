@@ -349,16 +349,18 @@
   justify-content: center;
   width: 30px;
   height: 26px;
-  margin-right: 0.25rem;
-  border: none;
-  border-radius: var(--radius-sm);
+  margin-right: 0.35rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--muted);
   transform: none;
   box-shadow: none;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
-.account-trigger:hover { background: var(--surface-2); color: var(--text); transform: none; box-shadow: none; }
-.account-trigger.open { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--text); }
+.account-trigger:hover { background: var(--surface-2); border-color: var(--border); color: var(--text); transform: none; box-shadow: none; }
+.account-trigger.open { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--text); }
 
 .account-avatar {
   display: inline-flex;
@@ -372,7 +374,9 @@
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), 0 2px 6px color-mix(in srgb, var(--accent) 25%, transparent);
 }
+.account-trigger:hover .account-avatar { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent), 0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
 .account-avatar.lg { width: 34px; height: 34px; font-size: 0.82rem; }
 
 .account-dropdown {

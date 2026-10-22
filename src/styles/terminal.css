@@ -13,6 +13,33 @@
   flex-shrink: 0;
   min-height: 80px;
   animation: nc-fade-in var(--dur-base) var(--ease-out);
+  transition: height var(--dur-base) var(--ease-out);
+}
+
+/* Maximized: grow the top border into a clear divider and let the panel own
+   most of the editor column. Height is applied inline (72%). */
+.terminal-panel.maximized {
+  min-height: 0;
+  box-shadow: 0 -6px 22px color-mix(in srgb, #000 28%, transparent);
+}
+
+/* Minimized: collapse to just the header bar — every body section hides and the
+   panel shrinks to its content, so nothing else on screen jumps. */
+.terminal-panel.minimized {
+  height: auto !important;
+  min-height: 0;
+}
+.terminal-panel.minimized .terminal-output,
+.terminal-panel.minimized .terminal-input-row,
+.terminal-panel.minimized .panel-list,
+.terminal-panel.minimized .panel-empty {
+  display: none;
+}
+
+/* Active panel-size toggle (maximize / minimize) reads as pressed-in. */
+.icon-button.is-active {
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 /* --- panel section tabs (Problems · Output · Debug · Terminal · Ports) ------ */

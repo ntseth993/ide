@@ -1,20 +1,20 @@
 /**
  * AI assistant panel: streaming chat over the secure main-process bridge.
  *
- * - API key entry is one-way: it is sent to the OS-encrypted store and the
- *   field is cleared; the panel only ever learns whether a key exists.
  * - Two modes: Ask answers questions about code; Agent plans a change and
  *   returns the whole updated file, which is offered as a diff for review.
+ * - Conversations are lightweight: Add starts a new chat, Recent reopens past
+ *   ones, Delete discards one — all stored locally in the renderer.
  * - Sign-in is required: the assistant is a member feature, and the main
  *   process enforces the same gate plus the local token budget.
  * - Code blocks in answers can be reviewed against the active file as a
  *   diff before anything is written (see App.jsx review flow).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { client, toUserMessage } from '../services/novaClient';
 import { formatTokens, formatExact } from '../utils/tokens';
 import { buildChatSystemPrompt } from '../services/aiPrompts';
-import { StopIcon, CheckIcon, SparkleIcon, PlusIcon, HistoryIcon, MicIcon, ChevronDownIcon, NovaMarkIcon, ArrowUpIcon, InfinityIcon } from './Icons';
+import { StopIcon, CheckIcon, SparkleIcon, PlusIcon, HistoryIcon, MicIcon, ChevronDownIcon, NovaMarkIcon, ArrowUpIcon, InfinityIcon, TrashIcon } from './Icons';
 
 const LEARN_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const MODES = [
@@ -30,6 +30,48 @@ const INLINE_STATES = {
   ready: { label: 'Press Tab', title: 'An AI suggestion is showing — press Tab to insert it' },
   error: { label: 'Inline AI idle', title: 'The last inline request failed; typing is unaffected' },
 };
+
+// Local chat history: recent conversations live in the renderer only, keyed by
+// a small id, so Add / Recent / Delete work without any server round-trip.
+const SESSIONS_KEY = 'novacode-ai-sessions';
+const MAX_SESSIONS = 24;
+
+function loadSessions() {
+  try {
+    const list = JSON.parse(localStorage.getItem(SESSIONS_KEY));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSessions(list) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(list.slice(0, MAX_SESSIONS)));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function makeSessionId() {
+  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function sessionTitle(messages) {
+  const first = messages.find((message) => message.role === 'user');
+  const text = String(first?.content || '').trim().replace(/\s+/g, ' ');
+  return text ? text.slice(0, 48) : 'New chat';
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const min = Math.floor(Math.max(0, Date.now() - ts) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
 
 /** Extract the first fenced code block from an assistant message. */
 export function extractFirstCodeBlock(text) {
@@ -101,12 +143,10 @@ export default function AIPanel({
   onStreamingChange,
   onProposeEdit,
   onOpenSettings,
-  onOpenHistory,
 }) {
   const provider = aiSettings.provider || 'openai';
   const [providers, setProviders] = useState([]);
   const [keyStatus, setKeyStatus] = useState({ hasKey: false, source: null, loaded: false });
-  const [keyInput, setKeyInput] = useState('');
   const [keyBusy, setKeyBusy] = useState(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
@@ -120,6 +160,13 @@ export default function AIPanel({
   // Agent mode offers a diff automatically, once per assistant answer.
   const finishReasonRef = useRef(null);
   const proposedAnswersRef = useRef(0);
+  // Local conversation history (Add / Recent / Delete).
+  const [sessions, setSessions] = useState(loadSessions);
+  const [currentId, setCurrentId] = useState(makeSessionId);
+  const [recentOpen, setRecentOpen] = useState(false);
+  const recentRef = useRef(null);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
 
   const setMode = (next) => {
     if (next === mode) return;
@@ -135,7 +182,6 @@ export default function AIPanel({
   }, []);
 
   useEffect(() => {
-    setKeyInput('');
     client
       .apiKeyStatus(provider)
       .then((status) => setKeyStatus({ ...status, loaded: true }))
@@ -179,21 +225,69 @@ export default function AIPanel({
     return unsubscribe;
   }, [onStreamingChange, onAccountChange]);
 
-  async function saveKey(event) {
-    event.preventDefault();
-    if (!keyInput.trim() || keyBusy) return;
-    setKeyBusy(true);
-    setError('');
-    try {
-      await client.setApiKey(provider, keyInput.trim());
-      setKeyInput('');
-      const status = await client.apiKeyStatus(provider);
-      setKeyStatus({ ...status, loaded: true });
-    } catch (keyError) {
-      setError(toUserMessage(keyError));
-    } finally {
-      setKeyBusy(false);
+  // Persist the live thread into the recent list as it grows; empty threads
+  // are skipped so an abandoned chat never clutters the history.
+  useEffect(() => {
+    if (!messages.length) return;
+    const entry = { id: currentId, title: sessionTitle(messages), messages, updatedAt: Date.now() };
+    const next = [entry, ...sessionsRef.current.filter((s) => s.id !== currentId)]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, MAX_SESSIONS);
+    sessionsRef.current = next;
+    setSessions(next);
+    persistSessions(next);
+  }, [messages, currentId]);
+
+  // Close the recent-chats dropdown on an outside click or Escape.
+  useEffect(() => {
+    if (!recentOpen) return undefined;
+    function onPointerDown(event) {
+      if (recentRef.current && !recentRef.current.contains(event.target)) setRecentOpen(false);
     }
+    function onKey(event) {
+      if (event.key === 'Escape') setRecentOpen(false);
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [recentOpen]);
+
+  const recentChats = useMemo(() => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions]);
+
+  function openSession(id) {
+    const found = sessions.find((s) => s.id === id);
+    if (!found) return;
+    if (runIdRef.current) cancel();
+    setCurrentId(id);
+    setMessages(Array.isArray(found.messages) ? found.messages : []);
+    setDraft('');
+    setError('');
+    proposedAnswersRef.current = countAnswers(found.messages || []);
+    finishReasonRef.current = null;
+    setRecentOpen(false);
+  }
+
+  function deleteSession(id) {
+    const next = sessionsRef.current.filter((s) => s.id !== id);
+    sessionsRef.current = next;
+    setSessions(next);
+    persistSessions(next);
+    if (id === currentId) {
+      setCurrentId(makeSessionId());
+      setMessages([]);
+      setError('');
+      proposedAnswersRef.current = 0;
+    }
+  }
+
+  function clearAllSessions() {
+    sessionsRef.current = [];
+    setSessions([]);
+    persistSessions([]);
+    setRecentOpen(false);
   }
 
   async function clearKey() {
@@ -215,10 +309,6 @@ export default function AIPanel({
     if (!account) {
       setError('Sign in to use the assistant.');
       onRequireSignIn?.();
-      return;
-    }
-    if (activeProvider.requiresKey && !keyStatus.hasKey) {
-      setError(`Add your ${activeProvider.label} API key first — it is stored encrypted by your operating system.`);
       return;
     }
     setError('');
@@ -269,9 +359,11 @@ export default function AIPanel({
 
   function newChat() {
     if (runIdRef.current) cancel();
+    setCurrentId(makeSessionId());
     setMessages([]);
     setDraft('');
     setError('');
+    setRecentOpen(false);
     proposedAnswersRef.current = 0;
     finishReasonRef.current = null;
   }
@@ -312,7 +404,7 @@ export default function AIPanel({
     ? [...messages].reverse().find((m) => m.role === 'assistant' && extractFirstCodeBlock(m.content))
     : null;
   const canPropose = Boolean(lastAssistantWithCode) && !runIdRef.current;
-  const canChat = Boolean(account) && (!activeProvider.requiresKey || keyStatus.hasKey);
+  const canChat = Boolean(account);
   const providerOptions = providers.length ? providers : [{ id: provider, label: activeProvider.label }];
   const keyLabel = !activeProvider.requiresKey
     ? 'local'
@@ -345,11 +437,63 @@ export default function AIPanel({
           <button type="button" className="icon-button" title="New chat" aria-label="New chat" onClick={newChat}>
             <PlusIcon size={16} />
           </button>
-          {onOpenHistory && (
-            <button type="button" className="icon-button" title="Chat history" aria-label="Chat history" onClick={onOpenHistory}>
+          <div className="ai-recent-wrap" ref={recentRef}>
+            <button
+              type="button"
+              className={recentOpen ? 'icon-button is-active' : 'icon-button'}
+              title="Recent chats"
+              aria-label="Recent chats"
+              aria-haspopup="menu"
+              aria-expanded={recentOpen}
+              onClick={() => setRecentOpen((value) => !value)}
+            >
               <HistoryIcon size={16} />
             </button>
-          )}
+            {recentOpen && (
+              <div className="ai-recent-menu" role="menu" aria-label="Recent chats">
+                <div className="ai-recent-head">
+                  <span>Recent chats</span>
+                  {recentChats.length > 0 && (
+                    <button type="button" className="ai-recent-clear" onClick={clearAllSessions}>Clear all</button>
+                  )}
+                </div>
+                {recentChats.length === 0 ? (
+                  <p className="ai-recent-empty">No saved chats yet.</p>
+                ) : recentChats.map((entry) => (
+                  <div className="ai-recent-item" key={entry.id}>
+                    <button
+                      type="button"
+                      className={entry.id === currentId ? 'ai-recent-open active' : 'ai-recent-open'}
+                      title={entry.title}
+                      onClick={() => openSession(entry.id)}
+                    >
+                      <span className="ai-recent-title">{entry.title}</span>
+                      <span className="ai-recent-time muted tiny">{timeAgo(entry.updatedAt)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-button ai-recent-delete"
+                      title="Delete chat"
+                      aria-label="Delete chat"
+                      onClick={() => deleteSession(entry.id)}
+                    >
+                      <TrashIcon size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="icon-button"
+            title={messages.length ? 'Delete this chat' : 'Nothing to delete'}
+            aria-label="Delete chat"
+            disabled={!messages.length}
+            onClick={() => deleteSession(currentId)}
+          >
+            <TrashIcon size={16} />
+          </button>
         </div>
       </div>
 
@@ -364,26 +508,6 @@ export default function AIPanel({
           <button type="button" className="primary small" onClick={() => onRequireSignIn?.()}>Sign in</button>
         </div>
       )}
-
-      {/* connect-key banner (only while a key is actually needed) */}
-      {activeProvider.requiresKey && (!keyStatus.hasKey || keyInput) ? (
-        <form className="ai-key-form" onSubmit={saveKey}>
-          <label htmlFor="nova-api-key">{activeProvider.label} API key</label>
-          <div className="key-row">
-            <input
-              id="nova-api-key"
-              type="password"
-              value={keyInput}
-              onChange={(event) => setKeyInput(event.target.value)}
-              placeholder="Paste your key (stored OS-encrypted)"
-              autoComplete="off"
-            />
-            <button type="submit" className="primary small" disabled={!keyInput.trim() || keyBusy}>
-              Save
-            </button>
-          </div>
-        </form>
-      ) : null}
 
       {error && (
         <div className="ai-error" role="alert">
@@ -457,7 +581,7 @@ export default function AIPanel({
               send();
             }
           }}
-          placeholder={canChat ? 'Plan and build, @ for context, / for commands' : !account ? 'Sign in to start chatting' : `Add your ${activeProvider.label} key to start chatting`}
+          placeholder={canChat ? 'Plan and build, @ for context, / for commands' : 'Sign in to start chatting'}
           rows={2}
           aria-label="Message the assistant"
         />

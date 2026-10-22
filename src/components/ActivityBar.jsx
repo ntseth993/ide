@@ -9,6 +9,7 @@ import {
   PanelLeftIcon,
   HistoryIcon,
   PuzzleIcon,
+  NovaLinkIcon,
 } from './Icons';
 
 export default function ActivityBar({
@@ -30,6 +31,7 @@ export default function ActivityBar({
     { id: 'explorer', icon: FilesIcon, label: 'Explorer' },
     { id: 'search', icon: SearchIcon, label: 'Search' },
     { id: 'extensions', icon: PuzzleIcon, label: 'Extensions' },
+    { id: 'novalink', icon: NovaLinkIcon, label: 'NovaLink' },
   ];
 
   return (
