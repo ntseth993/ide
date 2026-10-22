@@ -10,7 +10,6 @@
 const { app, BrowserWindow, session, protocol, shell, Menu, dialog, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
 
 const logger = require('./logger');
 const { createSettingsService } = require('./services/settingsService');
@@ -234,10 +233,14 @@ function registerAppProtocol() {
 }
 
 async function net_fetchFile(filePath) {
-  const response = await fetch(pathToFileURL(filePath).toString());
+  // Read via fs, not fetch(): the main-process fetch (undici) does not support
+  // the file: scheme, and cannot read inside the packaged app.asar archive.
+  // Electron patches fs to transparently serve asar paths, so this works both
+  // unpackaged (real dist/ folder) and packaged (inside app.asar).
+  const data = await fs.promises.readFile(filePath);
   const mime = MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
-  return new Response(await response.arrayBuffer(), {
-    status: response.status,
+  return new Response(new Uint8Array(data), {
+    status: 200,
     headers: {
       'Content-Type': mime,
       'Content-Security-Policy': buildCsp(),
