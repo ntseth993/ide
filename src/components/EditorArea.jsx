@@ -18,6 +18,13 @@ export default function EditorArea({
   onCursor,
   onEditorMount,
   language: languageOverride,
+  // Non-file tabs (e.g. Settings) that live in the same strip and replace the
+  // editor surface with their own content when active.
+  specialTabs = [],
+  activeSpecial = null,
+  specialContent = null,
+  onSelectSpecial = () => {},
+  onCloseSpecial = () => {},
 }) {
   const editorRef = useRef(null);
   const activeDoc = activePath ? docs[activePath] : null;
@@ -41,7 +48,7 @@ export default function EditorArea({
   return (
     <section className="editor-area" aria-label="Editor">
       <div className="tabstrip" role="tablist">
-        {tabs.length === 0 && <div className="tabstrip-empty">No file opened</div>}
+        {tabs.length === 0 && specialTabs.length === 0 && <div className="tabstrip-empty">No file opened</div>}
         {tabs.map((path) => {
           const doc = docs[path];
           const name = normalizePath(path).split('/').pop();
@@ -72,9 +79,34 @@ export default function EditorArea({
             </div>
           );
         })}
+        {specialTabs.map((tab) => (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={activeSpecial === tab.id}
+            tabIndex={0}
+            className={`tab special${activeSpecial === tab.id ? ' active' : ''}`}
+            onClick={() => onSelectSpecial(tab.id)}
+            onKeyDown={(event) => event.key === 'Enter' && onSelectSpecial(tab.id)}
+            title={tab.label}
+          >
+            <span className="tab-name">{tab.label}</span>
+            <button
+              type="button"
+              className="tab-close"
+              aria-label={`Close ${tab.label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCloseSpecial(tab.id);
+              }}
+            >
+              <CloseIcon size={12} />
+            </button>
+          </div>
+        ))}
       </div>
 
-      {activePath && (
+      {activePath && !activeSpecial && (
         <div className="breadcrumb" aria-label="Breadcrumb">
           <span className="crumb muted">{definitionPath(activePath)}</span>
           <span className="crumb-sep">/</span>
@@ -82,7 +114,9 @@ export default function EditorArea({
         </div>
       )}
 
-      {activeDoc ? (
+      {activeSpecial ? (
+        <div className="editor-settings">{specialContent}</div>
+      ) : activeDoc ? (
         <Editor
           height="100%"
           wrapperProps={{ className: 'monaco-host' }}

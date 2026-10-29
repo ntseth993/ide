@@ -239,6 +239,15 @@ export const NovaLinkIcon = (props) => (
   </Svg>
 );
 
+/* NovaDB — a database cylinder (stacked disks) for the Database workspace. */
+export const DatabaseIcon = (props) => (
+  <Svg {...props}>
+    <ellipse cx="12" cy="5" rx="8" ry="3" />
+    <path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+    <path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" />
+  </Svg>
+);
+
 export const BluetoothIcon = (props) => (
   <Svg {...props}>
     <path d="m7 7 10 10-5 4V3l5 4L7 17" />
@@ -258,5 +267,29 @@ export const ShareIcon = (props) => (
     <circle cx="6" cy="12" r="2.5" />
     <circle cx="18" cy="19" r="2.5" />
     <path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" />
+  </Svg>
+);
+
+/* Foreign-key / relationship marker — a small key glyph. */
+export const KeyIcon = (props) => (
+  <Svg {...props}>
+    <circle cx="7.5" cy="15.5" r="3.5" />
+    <path d="m10 13 8-8M15 5l3 3M18 8l2-2" />
+  </Svg>
+);
+
+/* Code / developer-integration marker — angle brackets with a slash. */
+export const CodeIcon = (props) => (
+  <Svg {...props}>
+    <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12" />
+  </Svg>
+);
+
+/* Deploy — a rocket lifting off (build & ship the user's project). */
+export const RocketIcon = (props) => (
+  <Svg {...props}>
+    <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09Z" />
+    <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2Z" />
+    <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
   </Svg>
 );

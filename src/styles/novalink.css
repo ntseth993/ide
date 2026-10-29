@@ -2,236 +2,375 @@
    NovaLink — peer-to-peer collaboration panel
    --------------------------------------------------------------------------
    Built entirely from NovaCode's design tokens (variables.css), so it tracks
-   every theme automatically. Reuses global button variants (.small, .primary,
-   .danger, .icon-button) and utility text classes (.muted, .tiny).
+   every theme automatically. Each .nl-section is a raised CARD; the items
+   inside (transports, peers, requests, transfers) are inset sub-cards so the
+   hierarchy reads at a glance. Reuses global button variants (.small,
+   .primary, .danger, .icon-button) and utility text classes (.muted, .tiny).
+   Motion animates only transform/opacity and inherits the global
+   prefers-reduced-motion / .reduce-animations kill-switch from animations.css.
    ========================================================================== */
 
 .novalink-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.7rem 0.8rem 1.1rem;
+  gap: 0.75rem;
+  padding: 0.85rem 0.85rem 1.25rem;
   overflow-y: auto;
   height: 100%;
 }
 .novalink-panel .panel-header { margin-bottom: 0; }
-.nl-title { display: inline-flex; align-items: center; gap: 0.4rem; }
-
-.nl-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--border);
-  animation: nc-fade-in var(--dur-base) var(--ease-out) both;
+.nl-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
+.nl-title svg { color: var(--accent); }
+
+/* --- section cards -------------------------------------------------------- */
+.nl-section {
+  position: relative;
+  display: flex;
+  /* Never shrink to fit the panel height — in a scrollable flex column that
+     would squash cards below their content and clip the text. Let the panel
+     scroll instead. */
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem 0.95rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  animation: nl-card-in var(--dur-slow) var(--ease-out) both;
+  transition:
+    border-color var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+/* Gentle lift so the active region feels alive without jumping around. */
+.nl-section:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+/* Staggered entrance — later cards trail the first for a cascading reveal. */
+.novalink-panel > .nl-section:nth-of-type(1) { animation-delay: 0ms; }
+.novalink-panel > .nl-section:nth-of-type(2) { animation-delay: 40ms; }
+.novalink-panel > .nl-section:nth-of-type(3) { animation-delay: 80ms; }
+.novalink-panel > .nl-section:nth-of-type(4) { animation-delay: 120ms; }
+.novalink-panel > .nl-section:nth-of-type(5) { animation-delay: 160ms; }
+.novalink-panel > .nl-section:nth-of-type(6) { animation-delay: 200ms; }
+.novalink-panel > .nl-section:nth-of-type(7) { animation-delay: 240ms; }
+
 .nl-h {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   color: var(--muted);
 }
-.nl-h-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
-.nl-scanning { animation: nl-pulse 1.4s ease-in-out infinite; }
+/* Accent marker in front of every card title. */
+.nl-h::before {
+  content: "";
+  flex: none;
+  width: 3px;
+  height: 0.95em;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+}
+.nl-h-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.nl-scanning { display: inline-flex; align-items: center; gap: 0.35rem; }
+.nl-scanning::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: nl-live 1.4s var(--ease-in-out) infinite;
+}
 
-.nl-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-.nl-note { line-height: 1.45; margin: 0; }
+.nl-actions { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.nl-note { line-height: 1.5; margin: 0; }
 .nl-error {
   position: relative;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   line-height: 1.45;
   color: color-mix(in srgb, var(--error) 82%, var(--text));
   background: color-mix(in srgb, var(--error) 12%, var(--surface-2));
   border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
   border-left: 3px solid var(--error);
   border-radius: var(--radius-md);
-  padding: 0.5rem 0.65rem 0.5rem 0.75rem;
+  padding: 0.55rem 0.7rem 0.55rem 0.8rem;
   overflow-wrap: anywhere;
-  animation: nc-fade-in var(--dur-fast) var(--ease-out) both;
+  animation: nl-card-in var(--dur-base) var(--ease-out) both;
 }
 
-/* --- identity + transports ------------------------------------------------ */
-.nl-identity { display: flex; flex-direction: column; gap: 0.1rem; }
-.nl-identity-name { font-size: 0.86rem; font-weight: 600; }
-.nl-transports { display: flex; flex-direction: column; gap: 0.4rem; }
+/* --- identity hero + transports ------------------------------------------- */
+.nl-section--hero,
+.nl-section:first-of-type { padding-top: 1.05rem; }
+.nl-section:first-of-type::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--accent-gradient);
+}
+.nl-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+    var(--surface-2);
+  border: 1px solid var(--border);
+}
+.nl-identity-name { font-size: 0.95rem; font-weight: 700; letter-spacing: 0.01em; }
+.nl-identity-fp {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  letter-spacing: 0.02em;
+}
+
+.nl-transports {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
 .nl-transport {
   display: flex;
-  gap: 0.55rem;
+  gap: 0.6rem;
   align-items: flex-start;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
-  padding: 0.5rem 0.6rem;
+  background: var(--surface-2);
+  padding: 0.6rem 0.65rem;
+  transition: border-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
 }
-.nl-transport.unsupported { opacity: 0.82; }
+.nl-transport:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.nl-transport.unsupported { opacity: 0.9; }
 .nl-transport-icon {
   flex: none;
-  width: 26px; height: 26px;
+  width: 30px; height: 30px;
   display: grid; place-items: center;
   border-radius: var(--radius-sm);
-  background: var(--surface-2);
+  background: var(--accent-soft);
   color: var(--accent);
+  border: 1px solid var(--accent-line);
 }
-.nl-transport.unsupported .nl-transport-icon { color: var(--faint); }
-.nl-transport-body { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
-.nl-transport-name { font-size: 0.82rem; font-weight: 600; }
-.nl-transport-state { font-size: 0.72rem; font-weight: 600; }
+.nl-transport.unsupported .nl-transport-icon {
+  background: var(--surface-3);
+  border-color: var(--border);
+  color: var(--faint);
+}
+.nl-transport-body { display: flex; flex-direction: column; gap: 0.14rem; min-width: 0; }
+.nl-transport-name { font-size: 0.84rem; font-weight: 650; }
+.nl-transport-state { font-size: 0.72rem; font-weight: 650; }
 .nl-transport-state.ok { color: var(--ok); }
 .nl-transport-state.off { color: var(--warn); }
 .nl-transport-adapter, .nl-transport-detail { overflow-wrap: anywhere; }
 
-/* --- nearby / requests / peers ------------------------------------------- */
+/* --- nearby / requests / peers (inset rows) ------------------------------ */
 .nl-nearby, .nl-request, .nl-peer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.55rem;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  padding: 0.5rem 0.6rem;
+  animation: nl-row-in var(--dur-base) var(--ease-out) both;
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
-.nl-request { flex-direction: column; align-items: stretch; gap: 0.4rem; }
-.nl-request.outgoing { background: var(--surface-2); }
-.nl-request-meta, .nl-nearby-meta { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.nl-nearby:hover, .nl-request:hover { border-color: var(--border-strong); }
+.nl-request { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.nl-request.outgoing { background: var(--surface-3); }
+.nl-request-meta, .nl-nearby-meta { display: flex; flex-direction: column; gap: 0.08rem; min-width: 0; }
 .nl-request-name, .nl-nearby-name, .nl-peer-name {
-  font-size: 0.82rem; font-weight: 600;
+  font-size: 0.84rem; font-weight: 650;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.nl-request-actions { display: flex; gap: 0.4rem; }
+.nl-request-actions { display: flex; gap: 0.45rem; }
 
-.nl-peer { padding: 0; border: none; background: none; gap: 0.4rem; }
-.nl-peer.active { padding: 0.15rem; border-radius: var(--radius-sm); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
+.nl-peer { padding: 0; border: none; background: none; gap: 0.45rem; }
+.nl-peer.active { padding: 0.18rem; border-radius: var(--radius-md); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
 .nl-peer-main {
   flex: 1; min-width: 0;
-  display: flex; align-items: center; gap: 0.5rem;
-  background: var(--surface);
+  display: flex; align-items: center; gap: 0.55rem;
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.6rem;
   text-align: left; color: var(--text); cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
-.nl-peer-main:hover:not(:disabled) { border-color: var(--border-strong); }
+.nl-peer-main:hover:not(:disabled) { border-color: var(--accent-line); transform: translateY(-1px); }
+.nl-peer-main:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .nl-peer-avatar {
-  flex: none; width: 26px; height: 26px; border-radius: var(--radius-full);
-  display: grid; place-items: center; font-weight: 700; font-size: 0.8rem;
+  flex: none; width: 30px; height: 30px; border-radius: var(--radius-full);
+  display: grid; place-items: center; font-weight: 700; font-size: 0.82rem;
   background: var(--accent-gradient); color: #fff;
+  box-shadow: var(--shadow-glow);
 }
 .nl-peer-meta { display: flex; flex-direction: column; min-width: 0; }
 
 /* --- chat ----------------------------------------------------------------- */
-.nl-chat { gap: 0.45rem; }
+.nl-chat { gap: 0.55rem; }
 .nl-messages {
-  display: flex; flex-direction: column; gap: 0.4rem;
-  max-height: 240px; overflow-y: auto;
-  padding: 0.35rem; border: 1px solid var(--border); border-radius: var(--radius-md);
-  background: var(--surface);
+  display: flex; flex-direction: column; gap: 0.45rem;
+  max-height: 260px; overflow-y: auto;
+  padding: 0.55rem; border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--panel) 60%, var(--surface-2));
 }
-.nl-msg { display: flex; }
+.nl-msg { display: flex; animation: nl-msg-in var(--dur-base) var(--ease-out) both; }
 .nl-msg.me { justify-content: flex-end; }
 .nl-msg.peer { justify-content: flex-start; }
 .nl-msg-bubble {
   max-width: 90%;
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.68rem;
   border-radius: var(--radius-md);
-  font-size: 0.82rem;
-  line-height: 1.4;
+  font-size: 0.83rem;
+  line-height: 1.45;
   background: var(--surface-2);
   border: 1px solid var(--border);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.nl-msg.me .nl-msg-bubble { background: var(--accent-soft); border-color: var(--accent-line); }
+.nl-msg.me .nl-msg-bubble {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  border-bottom-right-radius: var(--radius-xs);
+}
+.nl-msg.peer .nl-msg-bubble { border-bottom-left-radius: var(--radius-xs); }
 .nl-msg-code {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface-3);
 }
 .nl-msg-code-head {
   display: flex; justify-content: space-between; gap: 0.5rem;
-  padding: 0.2rem 0.4rem;
+  padding: 0.28rem 0.5rem;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
 }
 .nl-msg-code-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nl-msg-code pre, .nl-preview pre {
-  margin: 0; padding: 0.45rem 0.5rem;
-  font-family: var(--font-mono); font-size: 0.74rem;
+  margin: 0; padding: 0.5rem 0.55rem;
+  font-family: var(--font-mono); font-size: 0.75rem;
   overflow-x: auto; white-space: pre;
 }
 
-.nl-compose { display: flex; gap: 0.4rem; align-items: center; }
+.nl-compose { display: flex; gap: 0.45rem; align-items: center; }
 .nl-compose input {
   flex: 1; min-width: 0;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   color: var(--text);
-  padding: 0.42rem 0.6rem;
-  font-size: 0.82rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.83rem;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
-.nl-compose input:focus { border-color: var(--accent-line); }
-.nl-share { margin-top: 0.15rem; }
+.nl-compose input:focus { outline: none; border-color: var(--accent-line); box-shadow: var(--focus-ring); }
+.nl-share { margin-top: 0.2rem; }
 
 /* --- transfers ------------------------------------------------------------ */
 .nl-transfer {
-  display: flex; flex-direction: column; gap: 0.35rem;
+  position: relative;
+  display: flex; flex-direction: column; gap: 0.4rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
-  padding: 0.5rem 0.6rem;
+  background: var(--surface-2);
+  padding: 0.6rem 0.7rem;
+  animation: nl-row-in var(--dur-base) var(--ease-out) both;
 }
 .nl-transfer.in { border-left: 3px solid var(--info); }
 .nl-transfer.out { border-left: 3px solid var(--accent); }
 .nl-transfer-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.nl-transfer-title { font-size: 0.84rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nl-transfer-title { font-size: 0.85rem; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nl-transfer-status {
-  flex: none; font-size: 0.66rem; font-weight: 600;
-  padding: 0.1rem 0.45rem; border-radius: var(--radius-full);
+  flex: none; font-size: 0.66rem; font-weight: 650;
+  text-transform: capitalize;
+  padding: 0.12rem 0.5rem; border-radius: var(--radius-full);
   border: 1px solid var(--border);
 }
-.tone-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 8%, transparent); }
-.tone-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
-.tone-info { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); background: color-mix(in srgb, var(--info) 8%, transparent); }
-.tone-error { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); background: color-mix(in srgb, var(--error) 8%, transparent); }
+.tone-ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.tone-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.tone-info { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); background: color-mix(in srgb, var(--info) 10%, transparent); }
+.tone-error { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); background: color-mix(in srgb, var(--error) 10%, transparent); }
 .tone-muted { color: var(--muted); }
 
-.nl-progress { height: 6px; border-radius: var(--radius-full); background: var(--surface-3); overflow: hidden; }
-.nl-progress-bar { height: 100%; background: var(--accent-gradient); border-radius: inherit; transition: width var(--dur-base) var(--ease-out); }
+.nl-progress {
+  position: relative;
+  height: 7px; border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.nl-progress-bar {
+  position: relative;
+  height: 100%; border-radius: inherit;
+  background: var(--accent-gradient);
+  transition: width var(--dur-base) var(--ease-out);
+  overflow: hidden;
+}
+/* Traveling sheen communicates live transfer while the width is static. */
+.nl-progress-bar::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.4) 50%, transparent 80%);
+  background-size: 220% 100%;
+  animation: nl-shimmer 1.5s linear infinite;
+}
 
-.nl-transfer-actions { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.nl-transfer-actions { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
 .nl-preview {
-  max-height: 160px; overflow: auto;
-  margin: 0; padding: 0.45rem 0.5rem;
-  font-family: var(--font-mono); font-size: 0.72rem;
+  max-height: 170px; overflow: auto;
+  margin: 0; padding: 0.5rem 0.55rem;
+  font-family: var(--font-mono); font-size: 0.73rem;
   background: var(--surface-3);
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   white-space: pre; overflow-wrap: normal;
 }
-.nl-save { display: flex; flex-direction: column; gap: 0.35rem; }
-.nl-save-field { display: flex; flex-direction: column; gap: 0.15rem; }
+.nl-save { display: flex; flex-direction: column; gap: 0.4rem; }
+.nl-save-field { display: flex; flex-direction: column; gap: 0.18rem; }
 .nl-save-field input {
-  background: var(--surface-2);
+  background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 0.36rem 0.5rem;
+  padding: 0.42rem 0.55rem;
   font-size: 0.8rem;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
-.nl-save-field input:focus { border-color: var(--accent-line); }
-.nl-save-check { display: flex; align-items: center; gap: 0.4rem; }
+.nl-save-field input:focus { outline: none; border-color: var(--accent-line); box-shadow: var(--focus-ring); }
+.nl-save-check { display: flex; align-items: center; gap: 0.45rem; }
 .nl-transfer-saved { color: var(--ok); overflow-wrap: anywhere; }
 .nl-transfer-error { color: var(--error); }
 
-@keyframes nl-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
-
 /* --- Bluetooth surrounding-device discovery ------------------------------- */
-.nl-bt-power { font-size: 0.72rem; font-weight: 600; }
-.nl-bt-power.ok { color: var(--ok); }
-.nl-bt-power.off { color: var(--warn); }
-.nl-bt-devices { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.45rem; }
+.nl-bt-power {
+  font-size: 0.72rem; font-weight: 650;
+  padding: 0.1rem 0.5rem; border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+}
+.nl-bt-power.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.nl-bt-power.off { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.nl-bt-devices { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; }
 .nl-bt-badge {
   font-size: 0.62rem;
   text-transform: uppercase;
@@ -239,6 +378,272 @@
   color: var(--faint);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 0.1rem 0.35rem;
+  padding: 0.12rem 0.4rem;
   white-space: nowrap;
+}
+
+/* Bluetooth detection summary: at-a-glance capability flags. */
+.nl-bt-detect { display: flex; flex-direction: column; gap: 0.5rem; }
+.nl-bt-flags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.nl-bt-flag {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: 0.72rem; font-weight: 650;
+  padding: 0.18rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.nl-bt-flag::before {
+  content: "";
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--faint);
+}
+.nl-bt-flag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+.nl-bt-flag.ok::before { background: var(--ok); }
+.nl-bt-flag.off { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 34%, transparent); }
+.nl-bt-flag.off::before { background: var(--warn); }
+
+/* --- connection-state dots (available / connecting / connected) ----------- */
+.nl-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.nl-dot.available {
+  background: var(--info);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 16%, transparent);
+}
+.nl-dot.connected {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 16%, transparent);
+}
+.nl-dot.connecting {
+  background: var(--warn);
+  animation: nl-pulse 1.2s var(--ease-in-out) infinite;
+}
+.nl-name-row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.nl-name-row .nl-nearby-name,
+.nl-name-row .nl-peer-name,
+.nl-name-row .nl-request-name { min-width: 0; }
+
+/* --- keyframes (transform/opacity only) ---------------------------------- */
+@keyframes nl-card-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes nl-row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes nl-msg-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes nl-shimmer {
+  from { background-position: 160% 0; }
+  to { background-position: -160% 0; }
+}
+@keyframes nl-live {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@keyframes nl-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* --- narrow sidebar ------------------------------------------------------- */
+@media (max-width: 320px) {
+  .nl-transports { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================================
+   Refinement pass — a calmer, denser, more professional surface.
+   Removes the per-card hover "jump" and heavy shadows, adds a hairline
+   header divider, themed scrollbars, and tighter, quieter rows.
+   ========================================================================== */
+.novalink-panel {
+  gap: 0.7rem;
+  padding: 0.7rem 0.7rem 1.4rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.novalink-panel::-webkit-scrollbar { width: 10px; height: 10px; }
+.novalink-panel::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.novalink-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
+/* Header row gets a hairline divider so the panel reads as a titled view. */
+.novalink-panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  margin-bottom: 0.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Cards: one consistent surface, no shadow, no lift — only a border cue. */
+.nl-section {
+  padding: 0.8rem 0.85rem 0.9rem;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--surface) 90%, var(--panel));
+}
+.nl-section:hover {
+  box-shadow: none;
+  transform: none;
+  border-color: var(--border-strong);
+}
+/* Drop the gradient hero bar; the identity block already carries the accent. */
+.nl-section:first-of-type::before { display: none; }
+.nl-section:first-of-type { padding-top: 0.8rem; }
+
+/* Titles: keep the accent marker, tighten the shout. */
+.nl-h { letter-spacing: 0.06em; }
+
+/* Rows and transports: denser, with a subtle hover instead of a jump. */
+.nl-nearby, .nl-request, .nl-peer-main { padding: 0.5rem 0.6rem; }
+.nl-transport { padding: 0.55rem 0.6rem; }
+.nl-transport:hover { transform: none; border-color: var(--border-strong); }
+.nl-actions { gap: 0.4rem; }
+
+/* Notes read as gentle helper text, not stray paragraphs. */
+.nl-note {
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border-left: 2px solid var(--border-strong);
+}
+
+/* ==========================================================================
+   Simplify pass — a calmer, single-column flow: a compact identity hero with
+   small status pills (instead of two large transport cards), and a collapsed
+   Bluetooth disclosure in place of a full always-open section.
+   ========================================================================== */
+
+/* Identity hero: avatar + name on one line, status pills beneath. */
+.nl-hero { gap: 0.7rem; }
+.nl-identity {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0;
+  background: none;
+  border: none;
+}
+.nl-identity-avatar {
+  flex: none;
+  width: 38px; height: 38px;
+  border-radius: var(--radius-full);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 1rem; color: #fff;
+  background: var(--accent-gradient);
+  box-shadow: var(--shadow-glow);
+}
+.nl-identity-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.nl-identity-name { font-size: 0.98rem; }
+.nl-identity-fp { margin-top: 0.1rem; }
+
+/* Status pills replace the transport cards. */
+.nl-pills { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.nl-pill {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0.6rem 0.3rem 0.55rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.76rem;
+  line-height: 1;
+}
+.nl-pill::before {
+  content: "";
+  flex: none;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--faint);
+}
+.nl-pill-icon { display: inline-flex; color: var(--muted); }
+.nl-pill-name { font-weight: 650; }
+.nl-pill-state { color: var(--muted); }
+.nl-pill.ok { border-color: color-mix(in srgb, var(--ok) 32%, transparent); }
+.nl-pill.ok::before { background: var(--ok); }
+.nl-pill.ok .nl-pill-icon { color: var(--accent); }
+.nl-pill.ok .nl-pill-state { color: var(--ok); }
+.nl-pill.off { opacity: 0.9; }
+.nl-pill.off::before { background: var(--warn); }
+.nl-pill.off .nl-pill-state { color: var(--warn); }
+
+/* Bluetooth disclosure: one quiet row that expands only when asked. */
+.nl-details {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 90%, var(--panel));
+  overflow: hidden;
+  animation: nl-card-in var(--dur-slow) var(--ease-out) both;
+}
+.nl-summary {
+  display: flex; align-items: center; gap: 0.5rem;
+  cursor: pointer; list-style: none;
+  padding: 0.72rem 0.85rem;
+  font-size: 0.8rem; font-weight: 650; color: var(--text);
+}
+.nl-summary::-webkit-details-marker { display: none; }
+.nl-summary svg { color: var(--muted); }
+.nl-summary-label { flex: 1; }
+.nl-summary::after {
+  content: "";
+  flex: none;
+  width: 7px; height: 7px;
+  margin-right: 0.15rem;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.nl-details[open] .nl-summary::after { transform: rotate(-135deg); }
+.nl-details[open] .nl-summary { border-bottom: 1px solid var(--border); }
+.nl-details-body {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.7rem 0.85rem 0.85rem;
+}
+
+/* ==========================================================================
+   NovaLink as a large editor-area tab — the same full-width surface Settings
+   uses, so the panel breathes instead of living in the cramped sidebar.
+   ========================================================================== */
+.editor-settings .novalink-panel.nl-tab {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  gap: 0.95rem;
+  padding: 1.15rem 1.5rem 2.25rem;
+}
+.editor-settings .novalink-panel.nl-tab .panel-header {
+  padding-bottom: 0.8rem;
+}
+.editor-settings .novalink-panel.nl-tab .nl-title {
+  font-size: 0.98rem;
+}
+.editor-settings .novalink-panel.nl-tab .nl-pills {
+  gap: 0.5rem;
+}
+.editor-settings .novalink-panel.nl-tab .nl-pill {
+  font-size: 0.8rem;
+  padding: 0.38rem 0.7rem 0.38rem 0.62rem;
+}
+.editor-settings .novalink-panel.nl-tab .nl-messages {
+  max-height: 48vh;
+}
+.editor-settings .novalink-panel.nl-tab .nl-compose input {
+  font-size: 0.88rem;
+  padding: 0.55rem 0.95rem;
 }

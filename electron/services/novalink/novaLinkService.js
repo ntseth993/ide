@@ -608,7 +608,7 @@ function createNovaLinkService({ identity, transports = [], logger = console, on
       if (result.ok) {
         // Reflect the new radio state immediately so the UI can scan next.
         const scan = await transport.scanDevices().catch(() => null);
-        if (scan) state.bluetooth = { ...state.bluetooth, power: scan.power, devices: scan.devices, scannedAt: scan.scannedAt };
+        if (scan) state.bluetooth = { ...state.bluetooth, power: scan.power, devices: scan.devices, scannedAt: scan.scannedAt, capability: scan.capability };
       }
       emitState();
       return result;
@@ -624,7 +624,7 @@ function createNovaLinkService({ identity, transports = [], logger = console, on
       if (!transport?.scanDevices) throw new Error('No Bluetooth transport is available on this device.');
       const scan = await transport.scanDevices();
       if (scan.power === 'off' || scan.power === 'absent') {
-        state.bluetooth = { ...(state.bluetooth || {}), power: scan.power, devices: [], scannedAt: scan.scannedAt, detail: scan.detail };
+        state.bluetooth = { ...(state.bluetooth || {}), power: scan.power, devices: [], scannedAt: scan.scannedAt, detail: scan.detail, capability: scan.capability };
         emitState();
         throw new Error(scan.power === 'off'
           ? 'Bluetooth is switched off — enable it first, then scan.'
@@ -635,6 +635,7 @@ function createNovaLinkService({ identity, transports = [], logger = console, on
         devices: scan.devices,
         scannedAt: scan.scannedAt,
         detail: scan.detail || null,
+        capability: scan.capability || null,
         lastEnable: state.bluetooth?.lastEnable || null,
       };
       emitState();

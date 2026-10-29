@@ -1,9 +1,16 @@
 /**
- * terminalService shell-profile tests: per-platform profile lists, profile
- * resolution with a default fallback, and the profiles() summary shape.
+ * terminalService tests: shell-profile resolution (pure) plus the runCapture
+ * primitive used by the AI Agent (real spawn, workspace-confined).
  */
-import { describe, it, expect } from 'vitest';
-import { createTerminalService, profilesFor, resolveShell, pickShell } from '../electron/services/terminalService';
+import { describe, it, expect, vi } from 'vitest';
+import os from 'os';
+import path from 'path';
+import {
+  createTerminalService,
+  profilesFor,
+  resolveShell,
+  pickShell,
+} from '../electron/services/terminalService';
 
 const logger = { info: () => {}, warn: () => {}, error: () => {} };
 
@@ -40,4 +47,55 @@ describe('terminal shell profiles', () => {
     expect(result.profiles.length).toBeGreaterThan(0);
     expect(result.profiles.some((p) => p.id === result.defaultId && p.default)).toBe(true);
   });
+});
+
+function makeService() {
+  return createTerminalService({
+    onEvent: vi.fn(),
+    logger: { info: vi.fn(), error: vi.fn() },
+  });
+}
+
+describe('terminalService.runCapture', () => {
+  it('resolves with a structured error for an empty command (never throws)', async () => {
+    const term = makeService();
+    const res = await term.runCapture({ root: os.tmpdir(), command: '   ' });
+    expect(res.code).toBe(127);
+    expect(res.error).toMatch(/command is required/i);
+  });
+
+  it('refuses to run outside the workspace root', async () => {
+    const term = makeService();
+    const root = path.resolve(os.tmpdir(), 'nova-capture-root');
+    const res = await term.runCapture({ root, cwd: '..', command: 'echo hi' });
+    expect(res.code).toBe(127);
+    expect(res.error).toMatch(/outside the workspace/i);
+  });
+
+  it('requires a workspace root', async () => {
+    const term = makeService();
+    const res = await term.runCapture({ command: 'echo hi' });
+    expect(res.error).toMatch(/workspace root/i);
+  });
+
+  it('runs a command to completion and captures its output', async () => {
+    const term = makeService();
+    const marker = `nova-capture-${process.pid}`;
+    const res = await term.runCapture({ root: os.tmpdir(), command: `echo ${marker}` });
+    expect(res.error).toBeUndefined();
+    expect(res.code).toBe(0);
+    expect(res.output).toContain(marker);
+    expect(res.timedOut).toBe(false);
+  }, 15000);
+
+  it('honours a timeout and reports it', async () => {
+    const term = makeService();
+    // A command that outlives a tiny timeout must be killed, not hang forever.
+    const slow = process.platform === 'win32'
+      ? 'Start-Sleep -Seconds 5'
+      : 'sleep 5';
+    const res = await term.runCapture({ root: os.tmpdir(), command: slow, timeoutMs: 200 });
+    expect(res.timedOut).toBe(true);
+    expect(res.error).toMatch(/timed out/i);
+  }, 15000);
 });

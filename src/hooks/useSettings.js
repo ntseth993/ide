@@ -26,19 +26,38 @@ export const DEFAULT_SETTINGS = {
     aiPanelVisible: true,
   },
   ai: {
-    provider: 'openai',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
+    provider: 'pollinations',
+    baseUrl: 'https://text.pollinations.ai/v1',
+    model: 'openai-fast',
     temperature: 0.2,
+    inlineProvider: '',
+    inlineModel: '',
   },
 };
 
 function mergeDefaults(stored) {
+  const storedAi = { ...(stored?.ai || {}) };
+  // Mirror the main-process migration: an untouched default provider (never
+  // customized) yields to the free, no-key out-of-the-box default so the cached
+  // view matches the settings the main process returns.
+  const isDefaultTriple = (provider, baseUrl, model) =>
+    storedAi.provider === provider
+    && (storedAi.baseUrl === undefined || storedAi.baseUrl === baseUrl)
+    && (storedAi.model === undefined || storedAi.model === model);
+  const untouchedDefault =
+    isDefaultTriple('openai', 'https://api.openai.com/v1', 'gpt-4o-mini')
+    || isDefaultTriple('ollama', 'http://localhost:11434', 'llama3.2')
+    || isDefaultTriple('pollinations', 'https://text.pollinations.ai/v1', 'openai');
+  if (untouchedDefault) {
+    delete storedAi.provider;
+    delete storedAi.baseUrl;
+    delete storedAi.model;
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...(stored || {}),
     layout: { ...DEFAULT_SETTINGS.layout, ...(stored?.layout || {}) },
-    ai: { ...DEFAULT_SETTINGS.ai, ...(stored?.ai || {}) },
+    ai: { ...DEFAULT_SETTINGS.ai, ...storedAi },
   };
 }
 

@@ -39,10 +39,15 @@ const DEFAULTS = {
     aiPanelVisible: true,
   },
   ai: {
-    provider: 'openai',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
+    provider: 'pollinations',
+    baseUrl: 'https://text.pollinations.ai/v1',
+    model: 'openai-fast',
     temperature: 0.2,
+    // Optional overrides so ghost-text can use a fast provider/model (e.g.
+    // Gemini Flash, Groq) while chat stays on a stronger model. Empty = follow
+    // the assistant provider/model above.
+    inlineProvider: '',
+    inlineModel: '',
   },
 };
 
@@ -97,17 +102,42 @@ function sanitize(patch) {
       baseUrl: /^https?:\/\//i.test(baseUrl) ? baseUrl : DEFAULTS.ai.baseUrl,
       model: String(patch.ai.model ?? DEFAULTS.ai.model).slice(0, 120) || DEFAULTS.ai.model,
       temperature: Math.min(2, Math.max(0, Number(patch.ai.temperature ?? DEFAULTS.ai.temperature))) || 0,
+      inlineProvider: String(patch.ai.inlineProvider ?? DEFAULTS.ai.inlineProvider).slice(0, 40),
+      inlineModel: String(patch.ai.inlineModel ?? DEFAULTS.ai.inlineModel).slice(0, 120),
     };
   }
   return next;
 }
 
 function mergeDefaults(stored) {
+  const storedAi = { ...(stored.ai || {}) };
+  // One-time migration: an untouched default provider (never customized) yields
+  // to the new out-of-the-box default (free, no-key Pollinations) so a fresh or
+  // never-configured install answers immediately. Anyone who explicitly picked a
+  // provider or edited the URL/model keeps it, and unrelated fields (temperature,
+  // inline overrides) are always preserved. Matches the legacy OpenAI default and
+  // the intermediate Ollama default both shipped before this change.
+  const isDefaultTriple = (provider, baseUrl, model) =>
+    storedAi.provider === provider
+    && (storedAi.baseUrl === undefined || storedAi.baseUrl === baseUrl)
+    && (storedAi.model === undefined || storedAi.model === model);
+  const untouchedDefault =
+    isDefaultTriple('openai', 'https://api.openai.com/v1', 'gpt-4o-mini')
+    || isDefaultTriple('ollama', 'http://localhost:11434', 'llama3.2')
+    // The Pollinations default we shipped used the slow reasoning model 'openai',
+    // which stalls ~40s before its first token and reads as "not responding".
+    // Untouched installs on it migrate to the fast default model.
+    || isDefaultTriple('pollinations', 'https://text.pollinations.ai/v1', 'openai');
+  if (untouchedDefault) {
+    delete storedAi.provider;
+    delete storedAi.baseUrl;
+    delete storedAi.model;
+  }
   return {
     ...DEFAULTS,
     ...stored,
     layout: { ...DEFAULTS.layout, ...(stored.layout || {}) },
-    ai: { ...DEFAULTS.ai, ...(stored.ai || {}) },
+    ai: { ...DEFAULTS.ai, ...storedAi },
   };
 }
 

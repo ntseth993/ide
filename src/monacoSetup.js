@@ -32,35 +32,79 @@ function withAlpha(hex, alpha) {
 }
 
 // Token colors per kind rather than per theme: the same syntax hues stay
-// legible on every palette in the registry.
+// legible on every palette in the registry. The set below covers both the
+// Monarch base tokens (keyword/string/number/comment) AND the semantic token
+// scopes the TS/JS worker emits (function/class/variable/parameter/property/
+// enum/namespace) — mapping those is what makes identifiers, functions and
+// types each carry their own color, the way a full IDE highlights.
 const DARK_RULES = [
   { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
   { token: 'keyword', foreground: 'c4b5fd' },
-  { token: 'keyword.json', foreground: '93c5fd' },
+  { token: 'keyword.control', foreground: 'e9d5ff', fontStyle: 'bold' },
+  { token: 'keyword.json', foreground: '7dd3fc' },
+  { token: 'storage.type', foreground: 'c4b5fd' },
   { token: 'string', foreground: '86efac' },
-  { token: 'number', foreground: 'fbbf24' },
+  { token: 'string.key.json', foreground: '67e8f9' },
+  { token: 'string.value.json', foreground: '86efac' },
+  { token: 'number', foreground: 'fcd34d' },
+  { token: 'constant', foreground: 'fdba74' },
+  { token: 'constant.language', foreground: 'fdba74' },
+  { token: 'regexp', foreground: '5eead4' },
   { token: 'type', foreground: '7dd3fc' },
   { token: 'type.identifier', foreground: '7dd3fc' },
+  { token: 'type.parameter', foreground: '5eead4' },
+  { token: 'class', foreground: '7dd3fc' },
+  { token: 'interface', foreground: '7dd3fc' },
+  { token: 'enum', foreground: 'fcd34d' },
+  { token: 'enumMember', foreground: 'fdba74' },
+  { token: 'namespace', foreground: '7dd3fc' },
+  { token: 'function', foreground: '93c5fd' },
+  { token: 'method', foreground: '93c5fd' },
+  { token: 'variable', foreground: 'e6ebf4' },
+  { token: 'parameter', foreground: 'a5b4fc' },
+  { token: 'property', foreground: '67e8f9' },
+  { token: 'decorator', foreground: 'fbbf24' },
   { token: 'tag', foreground: '93c5fd' },
   { token: 'attribute.name', foreground: 'a5b4fc' },
   { token: 'attribute.value', foreground: '86efac' },
   { token: 'delimiter', foreground: '8fa0b8' },
   { token: 'operator', foreground: 'c4b5fd' },
+  { token: 'invalid', foreground: 'f87171' },
 ];
 
 const LIGHT_RULES = [
   { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
   { token: 'keyword', foreground: '7c3aed' },
-  { token: 'keyword.json', foreground: '1d4ed8' },
+  { token: 'keyword.control', foreground: '6d28d9', fontStyle: 'bold' },
+  { token: 'keyword.json', foreground: '0369a1' },
+  { token: 'storage.type', foreground: '7c3aed' },
   { token: 'string', foreground: '15803d' },
+  { token: 'string.key.json', foreground: '0e7490' },
+  { token: 'string.value.json', foreground: '15803d' },
   { token: 'number', foreground: 'b45309' },
+  { token: 'constant', foreground: 'c2410c' },
+  { token: 'constant.language', foreground: 'c2410c' },
+  { token: 'regexp', foreground: '0f766e' },
   { token: 'type', foreground: '0369a1' },
   { token: 'type.identifier', foreground: '0369a1' },
+  { token: 'type.parameter', foreground: '0f766e' },
+  { token: 'class', foreground: '0369a1' },
+  { token: 'interface', foreground: '0369a1' },
+  { token: 'enum', foreground: 'b45309' },
+  { token: 'enumMember', foreground: 'c2410c' },
+  { token: 'namespace', foreground: '0369a1' },
+  { token: 'function', foreground: '1d4ed8' },
+  { token: 'method', foreground: '1d4ed8' },
+  { token: 'variable', foreground: '1f2937' },
+  { token: 'parameter', foreground: '6d28d9' },
+  { token: 'property', foreground: '0e7490' },
+  { token: 'decorator', foreground: 'b45309' },
   { token: 'tag', foreground: '1d4ed8' },
-  { token: 'attribute.name', foreground: '7c3aed' },
+  { token: 'attribute.name', foreground: '6d28d9' },
   { token: 'attribute.value', foreground: '15803d' },
   { token: 'delimiter', foreground: '4b5563' },
   { token: 'operator', foreground: '7c3aed' },
+  { token: 'invalid', foreground: 'b91c1c' },
 ];
 
 /** Derive a complete Monaco theme from one NovaCode theme entry. */

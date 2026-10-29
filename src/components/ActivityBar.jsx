@@ -10,6 +10,8 @@ import {
   HistoryIcon,
   PuzzleIcon,
   NovaLinkIcon,
+  DatabaseIcon,
+  RocketIcon,
 } from './Icons';
 
 export default function ActivityBar({
@@ -24,14 +26,19 @@ export default function ActivityBar({
   onOpenPalette,
   onOpenSettings,
   onOpenHistory,
+  onOpenNovaLink,
+  onOpenNovaDb,
+  onOpenDeploy,
   settingsActive = false,
   historyActive = false,
+  novalinkActive = false,
+  novadbActive = false,
+  deployActive = false,
 }) {
   const views = [
     { id: 'explorer', icon: FilesIcon, label: 'Explorer' },
     { id: 'search', icon: SearchIcon, label: 'Search' },
     { id: 'extensions', icon: PuzzleIcon, label: 'Extensions' },
-    { id: 'novalink', icon: NovaLinkIcon, label: 'NovaLink' },
   ];
 
   return (
@@ -49,6 +56,33 @@ export default function ActivityBar({
             <Icon size={20} />
           </button>
         ))}
+        <button
+          type="button"
+          className={novalinkActive ? 'activity-button active' : 'activity-button'}
+          title="NovaLink (peer collaboration)"
+          aria-label="NovaLink"
+          onClick={onOpenNovaLink}
+        >
+          <NovaLinkIcon size={20} />
+        </button>
+        <button
+          type="button"
+          className={novadbActive ? 'activity-button active' : 'activity-button'}
+          title="Database (NovaDB)"
+          aria-label="Database"
+          onClick={onOpenNovaDb}
+        >
+          <DatabaseIcon size={20} />
+        </button>
+        <button
+          type="button"
+          className={deployActive ? 'activity-button active' : 'activity-button'}
+          title="Deploy (build & preview project)"
+          aria-label="Deploy"
+          onClick={onOpenDeploy}
+        >
+          <RocketIcon size={20} />
+        </button>
         <button
           type="button"
           className={terminalVisible ? 'activity-button active' : 'activity-button'}

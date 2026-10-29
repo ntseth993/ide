@@ -33,10 +33,10 @@ function streamResponse(parts) {
 }
 
 describe('provider registry', () => {
-  it('describes every backend and defaults unknown ids to OpenAI', () => {
+  it('describes every backend and defaults unknown ids to the free provider', () => {
     const ids = describeProviders().map((p) => p.id);
-    expect(ids).toEqual(expect.arrayContaining(['openai', 'anthropic', 'gemini', 'groq', 'openrouter', 'ollama']));
-    expect(getProvider('nope').id).toBe('openai');
+    expect(ids).toEqual(expect.arrayContaining(['pollinations', 'openai', 'anthropic', 'gemini', 'groq', 'openrouter', 'ollama']));
+    expect(getProvider('nope').id).toBe('pollinations');
     expect(getProvider('ollama').requiresKey).toBe(false);
     expect(getModule('anthropic').module).toHaveProperty('streamChat');
   });

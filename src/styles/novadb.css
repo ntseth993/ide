@@ -1,0 +1,375 @@
+/* ==========================================================================
+   NovaDB — Database workspace panel
+   --------------------------------------------------------------------------
+   Built entirely from NovaCode's design tokens (variables.css) so it tracks
+   every theme. Two columns: a catalog tree (databases → tables) and a detail
+   area (table designer, record grid, query editor). Reuses global button
+   variants (.small, .primary, .icon-button) and text utilities (.muted, .tiny).
+   ========================================================================== */
+
+.novadb-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+.ndb-tab { padding: 0; }
+
+.ndb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+.ndb-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.ndb-title svg { color: var(--accent); }
+.ndb-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.42rem;
+  border-radius: var(--radius-full);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+}
+
+.ndb-notice,
+.ndb-error {
+  flex: 0 0 auto;
+  margin: 0.6rem 1rem 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+.ndb-notice {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.ndb-error {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--error) 40%, transparent);
+  color: var(--error);
+}
+
+.ndb-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* --- catalog column ------------------------------------------------------- */
+.ndb-catalog {
+  width: 260px;
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem 0.6rem;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  background: var(--bg);
+}
+.ndb-catalog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ndb-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ndb-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ndb-inline-form-actions { display: flex; gap: 0.4rem; }
+.ndb-empty { padding: 0.4rem 0.25rem; }
+
+.ndb-tree,
+.ndb-tables { list-style: none; margin: 0; padding: 0; }
+.ndb-tables { margin: 0.15rem 0 0.35rem 1.1rem; }
+.ndb-db-item { display: flex; flex-wrap: wrap; align-items: center; }
+.ndb-db-name,
+.ndb-table-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.28rem 0.4rem;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.8rem;
+}
+.ndb-db-name svg { color: var(--accent); flex: 0 0 auto; }
+.ndb-db-name:hover,
+.ndb-table-name:hover { background: var(--surface-2); }
+.ndb-db-name.active,
+.ndb-table-name.active { background: var(--accent-soft); color: var(--text); }
+.ndb-db-name span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ndb-current { color: var(--ok); font-size: 0.6rem; }
+.ndb-db-add, .ndb-db-del, .ndb-table-del { flex: 0 0 auto; }
+.ndb-table-item { display: flex; align-items: center; }
+.ndb-table-name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ndb-rowcount {
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.35rem;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.ndb-storage { margin-top: auto; padding: 0.5rem 0.25rem 0; word-break: break-all; opacity: 0.7; }
+
+/* --- detail column -------------------------------------------------------- */
+.ndb-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.9rem 1rem 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.ndb-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  color: var(--muted);
+}
+.ndb-placeholder svg { color: var(--accent); opacity: 0.6; }
+.ndb-placeholder h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.ndb-placeholder p { margin: 0; max-width: 46ch; line-height: 1.5; }
+
+.ndb-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.ndb-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.ndb-table-title { font-weight: 700; font-size: 0.86rem; }
+
+/* --- table designer ------------------------------------------------------- */
+.ndb-designer input,
+.ndb-designer select,
+.ndb-inline-form input,
+.ndb-add-form input,
+.ndb-add-form select,
+.ndb-table-name-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  padding: 0.32rem 0.45rem;
+  font-size: 0.78rem;
+  font-family: inherit;
+}
+.ndb-designer input:focus,
+.ndb-add-form input:focus,
+.ndb-inline-form input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+.ndb-cols-editor { display: flex; flex-direction: column; gap: 0.3rem; }
+.ndb-col-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.85fr 0.35fr 0.62fr 0.55fr 1.3fr auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+.ndb-col-head {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.ndb-col-row input[type="checkbox"],
+.ndb-col-head span:nth-child(n+3):nth-child(-n+5) { justify-self: center; }
+.ndb-ref-cell { display: flex; gap: 0.25rem; min-width: 0; }
+.ndb-ref-cell select { min-width: 0; flex: 1; }
+.ndb-designer-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+
+/* --- relationship markers ------------------------------------------------- */
+.ndb-fk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: 0.35rem;
+  color: var(--accent);
+  font-size: 0.62rem;
+  vertical-align: middle;
+}
+.ndb-th-fk { display: block; font-weight: 400; opacity: 0.8; }
+
+/* --- developer integration card ------------------------------------------- */
+.ndb-integrate pre {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+}
+.ndb-integrate + .ndb-integrate { margin-top: 0.6rem; }
+.ndb-integrate-note { color: var(--muted); font-size: 0.78rem; margin: 0.35rem 0 0.6rem; }
+.ndb-integrate-label { font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.7rem 0 0.3rem; }
+
+/* --- external connector (loopback TCP server) ---------------------------- */
+.ndb-connector {
+  margin-top: 0.4rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel, rgba(255, 255, 255, 0.02));
+}
+.ndb-connector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.ndb-connector-state { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
+.ndb-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted); display: inline-block;
+}
+.ndb-dot.on { background: #3fb950; box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18); }
+.ndb-switch { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; cursor: pointer; }
+.ndb-connector-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0.7rem 0 0;
+}
+.ndb-connector-info dt { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.ndb-connector-info dd { margin: 0.15rem 0 0; display: flex; align-items: center; gap: 0.5rem; }
+.ndb-token {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.78rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ndb-connector-actions { display: flex; gap: 0.5rem; margin-top: 0.7rem; flex-wrap: wrap; }
+.ndb-connector-note { color: var(--muted); font-size: 0.76rem; margin: 0.7rem 0 0.35rem; }
+.ndb-connector pre { margin-top: 0.4rem; }
+
+/* --- add record form ------------------------------------------------------ */
+.ndb-add-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.5rem 0.7rem;
+  padding: 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ndb-field { display: flex; flex-direction: column; gap: 0.2rem; }
+.ndb-add-actions { grid-column: 1 / -1; display: flex; gap: 0.5rem; justify-content: flex-end; }
+
+/* --- record / result grid ------------------------------------------------- */
+.ndb-grid-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 60vh;
+}
+.ndb-grid {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.78rem;
+}
+.ndb-grid th,
+.ndb-grid td {
+  padding: 0.36rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.ndb-grid thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  color: var(--muted);
+  font-weight: 600;
+  z-index: 1;
+}
+.ndb-coltype {
+  margin-left: 0.4rem;
+  font-size: 0.6rem;
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ndb-grid tbody tr:hover { background: var(--surface-2); }
+.ndb-null { color: var(--faint); font-style: italic; }
+.ndb-col-actions { width: 2rem; text-align: right; }
+
+/* --- query editor --------------------------------------------------------- */
+.ndb-query-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 3.2rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 0.5rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.ndb-query-input:focus { outline: none; border-color: var(--accent-line); box-shadow: var(--focus-ring); }
+.ndb-query-actions { display: flex; align-items: center; gap: 0.6rem; }
+.ndb-result-wrap { max-height: 40vh; }

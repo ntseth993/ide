@@ -1,0 +1,14 @@
+{
+  "name": "novacode-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hostable, dependency-free OpenAI-compatible proxy that keeps NovaCode's provider API keys on the server instead of in the app bundle.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -10,7 +10,9 @@ import { describe, it, expect } from 'vitest';
 import {
   createBluetoothTransport,
   parseDeviceJson,
+  parseServiceStatus,
   derivePowerState,
+  deriveCapability,
 } from '../../electron/services/novalink/bluetoothTransport';
 
 const silentLogger = { warn() {}, error() {}, log() {} };
@@ -31,7 +33,7 @@ const peripheralRow = {
 };
 
 /** A scripted PowerShell stand-in that reports/changes a Bluetooth state. */
-function fakePowerShell({ disabled = false, enableWorks = true, hasAdapter = true } = {}) {
+function fakePowerShell({ disabled = false, enableWorks = true, hasAdapter = true, serviceRunning = true } = {}) {
   const calls = [];
   let adapterDisabled = disabled;
   const runPs = async (command) => {
@@ -41,6 +43,9 @@ function fakePowerShell({ disabled = false, enableWorks = true, hasAdapter = tru
       if (hasAdapter) rows.push(adapterRow(adapterDisabled));
       if (hasAdapter && !adapterDisabled) rows.push(peripheralRow);
       return { ok: true, stdout: JSON.stringify(rows), stderr: '', code: 0 };
+    }
+    if (command.includes('Get-Service bthserv')) {
+      return { ok: true, stdout: JSON.stringify({ Name: 'bthserv', Status: serviceRunning ? 'Running' : 'Stopped' }), stderr: '', code: 0 };
     }
     if (command.includes('Enable-PnpDevice')) {
       if (enableWorks) adapterDisabled = false;
@@ -72,6 +77,50 @@ describe('novalink bluetoothTransport — parsing helpers', () => {
     expect(derivePowerState(on)).toBe('on');
     expect(derivePowerState(off)).toBe('off');
     expect(derivePowerState([])).toBe('absent');
+  });
+
+  it('reads the bthserv status from Get-Service JSON', () => {
+    expect(parseServiceStatus(JSON.stringify({ Name: 'bthserv', Status: 'Running' }))).toBe('Running');
+    expect(parseServiceStatus(JSON.stringify([{ Name: 'bthserv', Status: 'Stopped' }]))).toBe('Stopped');
+    expect(parseServiceStatus('')).toBeNull();
+    expect(parseServiceStatus('nope')).toBeNull();
+  });
+
+  it('derives an honest capability report (scan yes, data no, with a workaround)', () => {
+    const devices = parseDeviceJson(JSON.stringify([adapterRow(false), peripheralRow]));
+    const cap = deriveCapability({ devices, power: 'on', serviceRunning: true });
+    expect(cap).toMatchObject({ adapterPresent: true, powered: true, canScan: true, discoverable: true, dataSupported: false });
+    expect(cap.dataWorkaround).toMatch(/PAN|Local network/i);
+    // Adapter present but radio off → cannot scan.
+    const offCap = deriveCapability({ devices: parseDeviceJson(JSON.stringify([adapterRow(true)])), power: 'off', serviceRunning: true });
+    expect(offCap).toMatchObject({ adapterPresent: true, powered: false, canScan: false });
+  });
+});
+
+describe('novalink bluetoothTransport — detection surfaced to the UI', () => {
+  it('getStatus reports a structured capability reflecting adapter + power + service', async () => {
+    const { runPs } = fakePowerShell({ disabled: false, serviceRunning: true });
+    const bt = createBluetoothTransport({ logger: silentLogger, platform: 'win32', runPs });
+    const status = await bt.getStatus();
+    expect(status.capability).toMatchObject({ adapterPresent: true, powered: true, serviceRunning: true, canScan: true, dataSupported: false });
+    expect(status.serviceRunning).toBe(true);
+  });
+
+  it('flags a stopped Bluetooth service as not discoverable / cannot scan', async () => {
+    const { runPs } = fakePowerShell({ disabled: false, serviceRunning: false });
+    const bt = createBluetoothTransport({ logger: silentLogger, platform: 'win32', runPs });
+    const status = await bt.getStatus();
+    expect(status.capability.serviceRunning).toBe(false);
+    expect(status.capability.discoverable).toBe(false);
+  });
+
+  it('scanDevices marks which OS-visible devices are currently connected', async () => {
+    const { runPs } = fakePowerShell({ disabled: false });
+    const bt = createBluetoothTransport({ logger: silentLogger, platform: 'win32', runPs });
+    const scan = await bt.scanDevices();
+    const speaker = scan.devices.find((d) => d.name === 'JBL Flip 6');
+    expect(speaker.connected).toBe(true);
+    expect(scan.capability.canScan).toBe(true);
   });
 });
 

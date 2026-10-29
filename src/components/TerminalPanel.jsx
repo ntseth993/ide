@@ -22,6 +22,7 @@ const COMMON_COMMANDS = [
   'git status', 'git add .', 'git commit', 'git push', 'git pull', 'git diff',
   'node .', 'python .', 'pip install ', 'cargo build', 'dotnet run', 'go run .',
   'ls', 'cd ', 'mkdir ', 'echo ', 'cat ', 'clear', 'exit',
+  'novadb status', 'novadb SHOW DATABASES',
 ];
 
 const MAX_INPUT_HEIGHT = 168;
@@ -63,6 +64,40 @@ function resolveCwd(root, from, arg) {
   else target = collapsePath(joinPath(from, a));
   if (!withinRoot(root, target)) return { error: 'cd: access outside the workspace folder is not allowed.' };
   return { path: target };
+}
+
+// --- NovaDB terminal formatting -------------------------------------------
+// `novadb status` prints the catalog; a query prints an aligned text table.
+// Both are pure functions over the plain result objects from the bridge.
+function formatNovaDbStatus(status) {
+  if (!status || status.unavailable) return 'NovaDB is only available in the desktop app.';
+  const dbs = status.databases || [];
+  if (!dbs.length) return 'NovaDB: no databases yet. Try: novadb CREATE DATABASE mydb';
+  const lines = [`NovaDB · ${dbs.length} database(s)`];
+  for (const db of dbs) {
+    lines.push(`  ${db.name}${db.isCurrent ? ' (current)' : ''}`);
+    for (const t of db.tables || []) lines.push(`    ${t.name}  ·  ${t.rowCount} row(s)`);
+  }
+  return lines.join('\n');
+}
+
+function formatNovaDbResult(result) {
+  if (!result) return 'OK';
+  if (result.type === 'select') {
+    const cols = result.columns || [];
+    const rows = result.rows || [];
+    if (!cols.length) return result.message || 'OK';
+    if (!rows.length) return `(${cols.join(', ')})\n0 rows`;
+    const cell = (row, c) => (row[c] === null || row[c] === undefined ? 'NULL' : String(row[c]));
+    const widths = cols.map((c) => Math.max(c.length, ...rows.map((r) => cell(r, c).length)));
+    const header = cols.map((c, i) => c.padEnd(widths[i])).join('  ');
+    const sep = widths.map((w) => '-'.repeat(w)).join('  ');
+    const body = rows.map((r) => cols.map((c, i) => cell(r, c).padEnd(widths[i])).join('  ')).join('\n');
+    return `${header}\n${sep}\n${body}\n\n${rows.length} row(s)`;
+  }
+  if (result.message) return result.message;
+  if (typeof result.affectedRows === 'number') return `${result.affectedRows} row(s) affected`;
+  return 'OK';
 }
 
 function PanelMenu({ commands, items }) {
@@ -329,6 +364,7 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
     setHistoryIndex(-1);
     // Echo the command the way a shell does: prompt + typed text, then the output.
     setLines((current) => [...current, { type: 'command', text: `${promptRef.current}${trimmed}` }]);
+    if (/^novadb(\s|$)/i.test(trimmed)) { await runNovaDb(trimmed); return; }
     if (handleLocalCommand(trimmed)) return;
     try {
       const { runId } = await client.startTerminal({ root: rootRef.current, cwd: cwdRef.current || rootRef.current, command: trimmed, profile: profileRef.current || undefined });
@@ -338,6 +374,34 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
     }
   }
   runCommandRef.current = runCommand;
+
+  // `novadb <sql>` and `novadb status` run against the same in-app NovaDB engine
+  // that powers the Database workspace, so statements typed here and edits made
+  // in the GUI share one persisted database. Multiple `;`-separated statements
+  // run in order (USE carries over). This never spawns a shell.
+  async function runNovaDb(trimmed) {
+    const rest = trimmed.replace(/^novadb\s*/i, '').trim();
+    if (!rest || rest.toLowerCase() === 'status') {
+      try {
+        const status = await client.novaDbStatus();
+        setLines((current) => [...current, { type: 'stdout', text: formatNovaDbStatus(status) }]);
+      } catch (error) {
+        setLines((current) => [...current, { type: 'stderr', text: toUserMessage(error) }]);
+      }
+      return;
+    }
+    const statements = rest.split(';').map((s) => s.trim()).filter(Boolean);
+    if (!statements.length) return;
+    try {
+      let last;
+      for (const sql of statements) {
+        last = await client.novaDbExec(sql);
+      }
+      setLines((current) => [...current, { type: 'stdout', text: formatNovaDbResult(last) }]);
+    } catch (error) {
+      setLines((current) => [...current, { type: 'stderr', text: toUserMessage(error) }]);
+    }
+  }
 
   // Built-ins handled in-app so the session feels continuous: `cd` moves the
   // tracked working directory (workspace-confined), `clear`/`cls` wipes output.

@@ -40,9 +40,11 @@ let sendGuard = () => {};
  * @param {(commandId: string) => void} hooks.send dispatch a command id to the renderer
  * @param {() => void} hooks.showAbout native About dialog
  * @param {() => void} hooks.showDocs native Documentation dialog
+ * @param {() => void} [hooks.onOpenFile] native file picker that opens a single file
+ * @param {() => void} [hooks.onNewWindow] open a new top-level IDE window
  * @returns {Electron.MenuItemConstructorOptions[]}
  */
-function buildMenuTemplate({ send, showAbout, showDocs }) {
+function buildMenuTemplate({ send, showAbout, showDocs, onOpenFile, onNewWindow }) {
   sendGuard = send;
 
   return [
@@ -50,8 +52,10 @@ function buildMenuTemplate({ send, showAbout, showDocs }) {
       label: '&File',
       submenu: [
         { label: 'New File', accelerator: 'CmdOrCtrl+N', click: () => send('new-file') },
-        { label: 'New Folder…', accelerator: 'CmdOrCtrl+Shift+N', click: () => send('new-folder') },
+        { label: 'New Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => onNewWindow?.() },
+        { label: 'New Folder…', click: () => send('new-folder') },
         { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => send('open-folder') },
+        { label: 'Open File…', accelerator: 'CmdOrCtrl+Alt+O', click: () => onOpenFile?.() },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('save-as') },

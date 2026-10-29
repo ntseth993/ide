@@ -15,6 +15,19 @@ const MODULES = { openai, anthropic, gemini, ollama };
 
 const PROVIDERS = [
   {
+    // Free, anonymous, no-key chat over the OpenAI-compatible protocol. This is
+    // the out-of-the-box default so a fresh install answers immediately with no
+    // setup. Rate-limited per IP (about one request every 30s) and best-effort;
+    // switch to Ollama (private/local) or a keyed provider for heavier use.
+    // Default to the fast model: the reasoning model ('openai') can stall ~40s
+    // before its first token, which reads as "not responding" for longer asks.
+    // reasoningEffort 'low' keeps these gpt-oss backends from spending the whole
+    // output budget on hidden thinking and returning an empty answer.
+    id: 'pollinations', label: 'Pollinations (free, no key)', kind: 'openai',
+    baseUrl: 'https://text.pollinations.ai/v1', defaultModel: 'openai-fast',
+    models: ['openai-fast', 'openai'], requiresKey: false, reasoningEffort: 'low',
+  },
+  {
     id: 'openai', label: 'OpenAI', kind: 'openai',
     baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini',
     models: ['gpt-4o-mini', 'gpt-4o', 'o3-mini'], requiresKey: true,
@@ -41,12 +54,22 @@ const PROVIDERS = [
   },
   {
     id: 'ollama', label: 'Ollama (local)', kind: 'ollama',
-    baseUrl: 'http://localhost:11434', defaultModel: 'llama3.1',
+    baseUrl: 'http://localhost:11434', defaultModel: 'llama3.2',
     models: [], requiresKey: false,
+  },
+  {
+    // A self-hostable OpenAI-compatible proxy (see /gateway). The user's key
+    // lives on that server, never in the app, so this provider needs no per-user
+    // API key: pick it, point the Base URL at your gateway, and chat/inline just
+    // work over the internet. The server routes `model` to OpenAI/Claude/Gemini.
+    id: 'gateway', label: 'NovaCode Gateway', kind: 'openai',
+    baseUrl: '', defaultModel: 'gpt-4o-mini',
+    models: ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-sonnet-latest', 'gemini-1.5-flash'],
+    requiresKey: false,
   },
 ];
 
-const DEFAULT_PROVIDER = 'openai';
+const DEFAULT_PROVIDER = 'pollinations';
 
 function getProvider(id) {
   return PROVIDERS.find((p) => p.id === id) || PROVIDERS.find((p) => p.id === DEFAULT_PROVIDER);

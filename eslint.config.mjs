@@ -43,6 +43,19 @@ export default [
     },
   },
   {
+    // Standalone, dependency-free gateway proxy: Node CommonJS, console allowed.
+    files: ['gateway/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-console': 'off',
+    },
+  },
+  {
     files: ['tests/**/*.{js,jsx}', 'vite.config.js', 'eslint.config.mjs'],
     plugins: {
       react: reactPlugin,

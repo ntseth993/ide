@@ -24,7 +24,13 @@ function normalizeProvider(payload, fallbackKey) {
 }
 
 function registerIpc({
-  getWindow,
+  // Multi-window: a sender is trusted if it belongs to a live IDE window, and
+  // streaming services reply to the *calling* window via a per-sender emitter.
+  isTrustedSender = () => true,
+  getWindowForSender = () => null,
+  emitTo = () => () => {},
+  createNewWindow = () => {},
+  openFileForWindow = async () => ({}),
   ipcMain = electron.ipcMain,
   dialog = electron.dialog,
   shell = electron.shell,
@@ -35,6 +41,10 @@ function registerIpc({
   registry,
   runtime,
   novalink,
+  novadb,
+  novadbConnector,
+  deploy,
+  preview,
   terminal,
   // Optional: without it the theme still works in content, just not in chrome.
   applyAppearance = () => ({ ok: false }),
@@ -52,8 +62,7 @@ function registerIpc({
     }
     handlers.set(channel, true);
     ipcMain.handle(channel, async (event, ...args) => {
-      const win = getWindow();
-      if (win && event.sender !== win.webContents) {
+      if (!isTrustedSender(event.sender)) {
         throw new Error('Unauthorized IPC sender.');
       }
       try {
@@ -68,8 +77,8 @@ function registerIpc({
   }
 
   // --- dialogs & workspace -------------------------------------------------
-  handle('dialog:choose-directory', async () => {
-    const win = getWindow();
+  handle('dialog:choose-directory', async (event) => {
+    const win = getWindowForSender(event.sender);
     const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory', 'createDirectory'],
       title: 'Open project folder',
@@ -90,6 +99,17 @@ function registerIpc({
     if (!stat.isDirectory()) throw new Error('That path is not a folder.');
     return resolved;
   });
+
+  // --- window management (multi-window) ------------------------------------
+  handle('window:new', () => createNewWindow());
+
+  handle('window:close', (event) => {
+    const win = getWindowForSender(event.sender);
+    if (win && !win.isDestroyed()) win.close();
+    return { ok: true };
+  });
+
+  handle('dialog:open-file', (event) => openFileForWindow(getWindowForSender(event.sender)));
 
   // --- filesystem (workspace-confined) -------------------------------------
   handle('fs:read-dir', (_event, { root, target } = {}) => {
@@ -155,11 +175,18 @@ function registerIpc({
   handle('history:restore', (_event, { root, id } = {}) => history.restore({ root, id }));
 
   // --- terminal -------------------------------------------------------------
-  handle('terminal:start', (_event, payload = {}) => terminal.start(payload));
+  handle('terminal:start', (event, payload = {}) => terminal.start(payload, emitTo(event.sender.id, 'terminal:event')));
 
   handle('terminal:cancel', (_event, runId) => terminal.cancel(String(runId || '')));
 
   handle('terminal:profiles', () => terminal.profiles());
+
+  // AI Agent runs a command to completion and gets its captured output back.
+  // Confined to the workspace; never throws (resolves with a structured error).
+  handle('terminal:run-capture', (_event, payload = {}) => {
+    if (!payload.root) throw new pathGuard.PathGuardError('Open a folder first.');
+    return terminal.runCapture(payload);
+  });
 
   // --- settings ---------------------------------------------------------------
   handle('settings:get', () => settings.load());
@@ -188,10 +215,10 @@ function registerIpc({
 
   handle('ai:check-connection', (_event, { provider, baseUrl } = {}) => ai.checkConnection({ provider, baseUrl }));
 
-  handle('ai:chat', (_event, payload = {}) => ai.start(payload));
+  handle('ai:chat', (event, payload = {}) => ai.start(payload, emitTo(event.sender.id, 'ai:event')));
 
   // Inline ghost-text suggestions: same auth gate as chat, never throws.
-  handle('ai:complete', (_event, payload = {}) => ai.complete(payload));
+  handle('ai:complete', (event, payload = {}) => ai.complete(payload, emitTo(event.sender.id, 'ai:event')));
 
   handle('ai:cancel', (_event, runId) => ai.cancel(String(runId || '')));
 
@@ -262,6 +289,11 @@ function registerIpc({
     chrome: process.versions.chrome,
   }));
 
+  handle('app:quit', () => {
+    app.quit();
+    return { ok: true };
+  });
+
   // Native half of the theme: window canvas colour + light/dark OS chrome, so a
   // theme switch is visible everywhere, not only inside the web content.
   handle('window:set-appearance', (_event, payload = {}) => applyAppearance(payload));
@@ -306,6 +338,62 @@ function registerIpc({
   // --- language runtimes -------------------------------------------------------
   if (runtime) {
     handle('runtime:detect', async () => runtime.detectAll());
+  }
+
+  // --- NovaDB (the IDE's own database engine) ------------------------------
+  // The renderer never sees the engine: it sends a SQL string (+ optional bind
+  // params) over a closed channel and gets a plain result object back. The
+  // service owns persistence; nothing here touches the filesystem directly.
+  if (novadb) {
+    handle('db:status', () => novadb.status());
+    handle('db:execute', (_event, { sql, params } = {}) => {
+      if (typeof sql !== 'string' || !sql.trim()) throw new Error('A SQL statement is required.');
+      return novadb.execute(sql, Array.isArray(params) ? params : []);
+    });
+  }
+
+  // --- NovaDB external connector (loopback TCP server for separate programs) --
+  // The renderer can inspect and toggle the connector. `configure` is the only
+  // mutating channel; the server itself clamps the host to loopback and owns the
+  // shared token, so no arbitrary bind address can be requested from the UI.
+  if (novadbConnector) {
+    handle('db:connectorStatus', () => novadbConnector.status());
+    handle('db:connectorConfigure', (_event, { enabled, port, regenerateToken } = {}) => {
+      const patch = {};
+      if (typeof enabled === 'boolean') patch.enabled = enabled;
+      if (Number.isInteger(port)) patch.port = port;
+      if (typeof regenerateToken === 'boolean') patch.regenerateToken = regenerateToken;
+      return novadbConnector.configure(patch);
+    });
+  }
+
+  // --- Deploy (build / preview / export the user's own project) --------------
+  // All operations are confined to the opened workspace via pathGuard inside
+  // the deploy + preview services. Building shells out through the terminal
+  // service; the preview server is loopback-only. Nothing here touches the
+  // network on its own and no hosting credentials are stored.
+  if (deploy) {
+    handle('deploy:detect', (_event, root) => {
+      if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+      return deploy.detect(root);
+    });
+    handle('deploy:build', (_event, { root, command, timeoutMs } = {}) => {
+      if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+      return deploy.build(root, { command, timeoutMs });
+    });
+    handle('deploy:export', (_event, { root, outputDir } = {}) => {
+      if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+      return deploy.exportBundle(root, { outputDir });
+    });
+  }
+
+  if (preview) {
+    handle('deploy:previewStatus', () => preview.status());
+    handle('deploy:previewStart', (_event, { root, dir } = {}) => {
+      if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+      return preview.start({ root, dir });
+    });
+    handle('deploy:previewStop', () => preview.stop());
   }
 
   // --- NovaLink peer-to-peer collaboration -----------------------------------

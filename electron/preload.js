@@ -21,7 +21,12 @@ function subscribe(channel, callback) {
 const api = {
   // dialogs & workspace
   chooseDirectory: () => invoke('dialog:choose-directory'),
+  openFile: () => invoke('dialog:open-file'),
   validateWorkspace: (root) => invoke('workspace:validate', root),
+  // multi-window: open/close a window, quit the app
+  newWindow: () => invoke('window:new'),
+  closeWindow: () => invoke('window:close'),
+  quitApp: () => invoke('app:quit'),
   // main -> renderer: open a folder/file requested via the `nova` CLI
   onWorkspaceRequest: (callback) => subscribe('workspace:request', callback),
   // main -> renderer: native application menu dispatched a command id
@@ -46,6 +51,7 @@ const api = {
   startTerminal: (payload) => invoke('terminal:start', payload),
   cancelTerminal: (runId) => invoke('terminal:cancel', runId),
   terminalProfiles: () => invoke('terminal:profiles'),
+  runTerminalCapture: (payload) => invoke('terminal:run-capture', payload),
   onTerminalEvent: (callback) => subscribe('terminal:event', callback),
 
   // settings
@@ -90,6 +96,21 @@ const api = {
 
   // language runtimes
   detectRuntimes: () => invoke('runtime:detect'),
+
+  // NovaDB — the IDE's own database engine (Database workspace + `novadb` cmd).
+  novaDbStatus: () => invoke('db:status'),
+  novaDbExec: (sql, params) => invoke('db:execute', { sql, params }),
+  // NovaDB external connector (loopback TCP server for separate programs).
+  novaDbConnectorStatus: () => invoke('db:connectorStatus'),
+  novaDbConnectorConfigure: (patch) => invoke('db:connectorConfigure', patch),
+
+  // Deploy — build / preview / export the opened project (all workspace-confined).
+  deployDetect: (root) => invoke('deploy:detect', root),
+  deployBuild: (payload) => invoke('deploy:build', payload),
+  deployExport: (payload) => invoke('deploy:export', payload),
+  deployPreviewStatus: () => invoke('deploy:previewStatus'),
+  deployPreviewStart: (payload) => invoke('deploy:previewStart', payload),
+  deployPreviewStop: () => invoke('deploy:previewStop'),
 
   // NovaLink peer-to-peer collaboration (narrow, validated channels only).
   novalinkStatus: () => invoke('novalink:status'),

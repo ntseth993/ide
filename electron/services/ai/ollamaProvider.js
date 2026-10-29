@@ -42,6 +42,9 @@ async function streamChat({
 
     if (!response.ok) {
       const bodyText = await response.text().catch(() => '');
+      if (response.status === 404 && /not found|does not exist/i.test(bodyText)) {
+        throw new Error(`The model "${model}" isn't installed in Ollama yet. Run \`ollama pull ${model}\` and try again.`);
+      }
       throw new Error(bodyText ? `Ollama error (${response.status}): ${bodyText.slice(0, 200)}` : `Ollama error (${response.status}).`);
     }
     if (!response.body) throw new Error('Ollama returned an empty response stream.');
@@ -89,7 +92,7 @@ async function streamChat({
       throw err;
     }
     if (error.cause?.code === 'ECONNREFUSED' || error.code === 'ECONNREFUSED') {
-      throw new Error('Could not reach Ollama. Is it running locally? Start it with `ollama serve`.');
+      throw new Error('Could not reach Ollama at localhost:11434. Install it from ollama.com and start the app, then run `ollama pull llama3.2` once. (If Ollama is already installed, start it with `ollama serve`.)');
     }
     throw error;
   } finally {

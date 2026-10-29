@@ -1,0 +1,346 @@
+/* ==========================================================================
+   NovaCode IDE — first-run onboarding tour
+   --------------------------------------------------------------------------
+   Full-screen wizard overlay shown before the app. Motion only touches
+   transform/opacity, slides are direction-aware, and everything respects the
+   global reduced-motion rules. Accent color per step is set via data-accent.
+   ========================================================================== */
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal) + 20);
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 3rem);
+  background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 55%),
+    color-mix(in srgb, var(--bg) 82%, #000);
+  backdrop-filter: blur(6px);
+  animation: nc-ob-overlay-in var(--dur-slow) var(--ease-out) both;
+}
+.onboarding-overlay.leaving {
+  animation: nc-ob-overlay-out var(--dur-base) var(--ease-in-out) both;
+}
+
+/* --- ambient aurora blobs -------------------------------------------------- */
+.onboarding-aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.onboarding-aurora .blob {
+  position: absolute;
+  width: 42vmax;
+  height: 42vmax;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+  will-change: transform;
+}
+.blob-a { background: color-mix(in srgb, var(--accent) 55%, transparent); top: -12vmax; left: -8vmax; animation: nc-ob-float 16s var(--ease-in-out) infinite; }
+.blob-b { background: color-mix(in srgb, var(--accent-2) 45%, transparent); bottom: -16vmax; right: -10vmax; animation: nc-ob-float 20s var(--ease-in-out) infinite reverse; }
+.blob-c { background: color-mix(in srgb, var(--accent-3) 40%, transparent); top: 30%; right: 24%; width: 28vmax; height: 28vmax; animation: nc-ob-float 24s var(--ease-in-out) infinite; }
+
+/* --- rising bubbles -------------------------------------------------------- */
+.onboarding-bubbles {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.onboarding-bubble {
+  position: absolute;
+  bottom: -90px;
+  left: var(--b-left);
+  width: var(--b-size);
+  height: var(--b-size);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.28), transparent 46%),
+    color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 22%, transparent);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: nc-ob-bubble var(--b-dur) linear var(--b-delay) infinite;
+}
+
+/* --- flying code snippets -------------------------------------------------- */
+.onboarding-codefield {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.onboarding-flycode {
+  position: absolute;
+  top: var(--c-top);
+  left: var(--c-left);
+  font-family: var(--font-mono);
+  font-size: var(--c-size);
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--accent-2) 62%, var(--muted));
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent-2) 30%, transparent);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: nc-ob-flycode var(--c-dur) var(--ease-in-out) var(--c-delay) infinite;
+}
+
+@keyframes nc-ob-bubble {
+  0% { transform: translate(0, 0) scale(0.9); opacity: 0; }
+  10% { opacity: 0.65; }
+  50% { transform: translate(var(--b-sway), -55vh) scale(1); }
+  85% { opacity: 0.5; }
+  100% { transform: translate(calc(var(--b-sway) * -0.6), -112vh) scale(1.06); opacity: 0; }
+}
+@keyframes nc-ob-flycode {
+  0% { transform: translate(0, 0) rotate(-2deg); opacity: 0; }
+  12% { opacity: 0.55; }
+  88% { opacity: 0.5; }
+  100% { transform: translate(var(--c-x), var(--c-y)) rotate(3deg); opacity: 0; }
+}
+
+/* --- the card (decoration layers sit behind it) ---------------------------- */
+.onboarding-shell {
+  position: relative;
+  z-index: 2;
+  width: min(680px, 100%);
+  padding: clamp(1.6rem, 3vw, 2.6rem);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-strong);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  outline: none;
+  animation: nc-ob-card-in var(--dur-slower) var(--ease-spring) both;
+  --ob-accent: var(--accent);
+}
+.onboarding-shell[data-accent="cyan"] { --ob-accent: var(--accent-2); }
+.onboarding-shell[data-accent="amber"] { --ob-accent: var(--warn); }
+.onboarding-shell[data-accent="violet"] { --ob-accent: var(--accent); }
+
+.onboarding-skip {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
+}
+.onboarding-skip:hover { color: var(--text); background: var(--surface-2); }
+
+/* --- progress rail --------------------------------------------------------- */
+.onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 1.4rem;
+}
+.onboarding-track {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.onboarding-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ob-accent), color-mix(in srgb, var(--ob-accent) 40%, var(--accent-2)));
+  transition: width var(--dur-slow) var(--ease-out);
+}
+.onboarding-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* --- step stage ------------------------------------------------------------ */
+.onboarding-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 260px;
+}
+.onboarding-stage.dir-next { animation: nc-ob-slide-next var(--dur-slower) var(--ease-out) both; }
+.onboarding-stage.dir-back { animation: nc-ob-slide-back var(--dur-slower) var(--ease-out) both; }
+
+.onboarding-icon {
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  margin-bottom: 1.1rem;
+  border-radius: 20px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--ob-accent), color-mix(in srgb, var(--ob-accent) 55%, var(--accent-3)));
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--ob-accent) 34%, transparent);
+  animation: nc-ob-icon-pop var(--dur-slower) var(--ease-spring) both;
+}
+.onboarding-eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ob-accent);
+}
+.onboarding-title {
+  margin: 0 0 0.7rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--text);
+}
+.onboarding-body {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.onboarding-tip {
+  margin: 1rem 0 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--ob-accent) 10%, var(--surface));
+  font-size: 0.82rem;
+  color: var(--text);
+}
+.onboarding-final-badge {
+  margin-top: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 34%, transparent);
+}
+
+/* --- controls -------------------------------------------------------------- */
+.onboarding-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.6rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+.onboarding-dots { display: flex; align-items: center; gap: 0.4rem; }
+.onboarding-dot {
+  width: 9px;
+  height: 9px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-3);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-spring), background var(--dur-fast) var(--ease-out), width var(--dur-base) var(--ease-out);
+}
+.onboarding-dot:hover { background: var(--muted); }
+.onboarding-dot.done { background: color-mix(in srgb, var(--ob-accent) 55%, var(--surface-3)); }
+.onboarding-dot.active {
+  width: 26px;
+  border-radius: var(--radius-full);
+  background: var(--ob-accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ob-accent) 50%, transparent);
+}
+
+.onboarding-buttons { display: flex; align-items: center; gap: 0.6rem; }
+.onboarding-back {
+  min-height: 0;
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.onboarding-back:hover { color: var(--text); border-color: var(--border-strong); }
+
+.onboarding-next {
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 1.5rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--ob-accent), color-mix(in srgb, var(--ob-accent) 55%, var(--accent-3)));
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--ob-accent) 32%, transparent);
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out);
+}
+.onboarding-next:hover { transform: translateY(-1px); box-shadow: 0 10px 28px color-mix(in srgb, var(--ob-accent) 42%, transparent); }
+.onboarding-next:active { transform: translateY(0); }
+.onboarding-next.finish {
+  background: linear-gradient(135deg, var(--ok), color-mix(in srgb, var(--ok) 60%, var(--accent-3)));
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--ok) 34%, transparent);
+}
+
+/* --- keyframes ------------------------------------------------------------- */
+@keyframes nc-ob-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes nc-ob-overlay-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes nc-ob-card-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes nc-ob-slide-next {
+  from { opacity: 0; transform: translateX(34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes nc-ob-slide-back {
+  from { opacity: 0; transform: translateX(-34px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes nc-ob-icon-pop {
+  0% { opacity: 0; transform: scale(0.6) rotate(-8deg); }
+  60% { transform: scale(1.06) rotate(2deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+@keyframes nc-ob-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(4vmax, -3vmax) scale(1.08); }
+}
+
+/* --- responsive ------------------------------------------------------------ */
+@media (max-width: 560px) {
+  .onboarding-shell { padding: 1.4rem 1.2rem; }
+  .onboarding-stage { min-height: 0; }
+  .onboarding-count { display: none; }
+  .onboarding-skip span { display: none; }
+}

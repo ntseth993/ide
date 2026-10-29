@@ -89,4 +89,69 @@ describe('openaiProvider.streamChat', () => {
       }),
     ).rejects.toThrow('API key');
   });
+
+  it('never surfaces hidden reasoning as an answer; retries instead', async () => {
+    const deltas = [];
+    await expect(
+      streamChat({
+        baseUrl: 'https://api.example.test/v1',
+        apiKey: 'k',
+        model: 'openai-fast',
+        messages: [{ role: 'user', content: 'hard question' }],
+        fetchImpl: async () =>
+          sseResponse([
+            'data: {"choices":[{"delta":{"reasoning":"think "}}]}\n\n',
+            'data: {"choices":[{"delta":{"reasoning":"hard"}}]}\n\n',
+            'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+            'data: [DONE]\n\n',
+          ]),
+        onDelta: (delta) => deltas.push(delta),
+      }),
+    ).rejects.toMatchObject({ retryable: true });
+    // Chain-of-thought must never leak into the visible answer.
+    expect(deltas).toEqual([]);
+  });
+
+  it('treats a totally empty stream as a retryable transient', async () => {
+    await expect(
+      streamChat({
+        baseUrl: 'https://api.example.test/v1',
+        apiKey: 'k',
+        model: 'openai-fast',
+        messages: [{ role: 'user', content: 'hi' }],
+        fetchImpl: async () =>
+          sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n', 'data: [DONE]\n\n']),
+        onDelta: () => {},
+      }),
+    ).rejects.toMatchObject({ retryable: true });
+  });
+
+  it('sends max_tokens and forwards reasoning_effort only when provided', async () => {
+    let sentBody;
+    const capture = async (_url, options) => {
+      sentBody = JSON.parse(options.body);
+      return sseResponse(['data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n', 'data: [DONE]\n\n']);
+    };
+    await streamChat({
+      baseUrl: 'https://api.example.test/v1',
+      apiKey: 'k',
+      model: 'openai-fast',
+      messages: [{ role: 'user', content: 'hi' }],
+      reasoningEffort: 'low',
+      fetchImpl: capture,
+      onDelta: () => {},
+    });
+    expect(sentBody.max_tokens).toBeGreaterThan(0);
+    expect(sentBody.reasoning_effort).toBe('low');
+
+    await streamChat({
+      baseUrl: 'https://api.example.test/v1',
+      apiKey: 'k',
+      model: 'gpt-test',
+      messages: [{ role: 'user', content: 'hi' }],
+      fetchImpl: capture,
+      onDelta: () => {},
+    });
+    expect(sentBody).not.toHaveProperty('reasoning_effort');
+  });
 });

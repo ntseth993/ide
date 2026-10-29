@@ -23,6 +23,7 @@ export const mockNova = {
   restoreHistory: vi.fn(async () => ({ filePath: '', content: null })),
   startTerminal: vi.fn(async () => ({ runId: 'term-test' })),
   cancelTerminal: vi.fn(async () => ({ ok: true })),
+  runTerminalCapture: vi.fn(async () => ({ output: '', code: 0, signal: null })),
   terminalProfiles: vi.fn(async () => ({
     platform: 'win32',
     defaultId: 'powershell',

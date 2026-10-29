@@ -40,6 +40,22 @@ export const client = {
     requireDesktop();
     return nova.chooseDirectory();
   },
+  // Open a single file via the native picker (main process routes it back to
+  // this window). Requires the desktop bridge.
+  async openFile() {
+    requireDesktop();
+    return nova.openFile();
+  },
+  // Multi-window + lifecycle. Fire-and-forget: outside Electron they no-op.
+  newWindow() {
+    nova?.newWindow?.();
+  },
+  closeWindow() {
+    nova?.closeWindow?.();
+  },
+  quitApp() {
+    nova?.quitApp?.();
+  },
   async validateWorkspace(root) {
     requireDesktop();
     return nova.validateWorkspace(root);
@@ -100,6 +116,14 @@ export const client = {
   },
   cancelTerminal(runId) {
     nova?.cancelTerminal(runId);
+  },
+  // AI Agent command execution. Degrades to a structured error (never throws)
+  // when the bridge is missing or stale, so the agent loop can surface it.
+  async runTerminalCapture(payload) {
+    if (!nova || typeof nova.runTerminalCapture !== 'function') {
+      return { output: '', code: null, error: 'Running commands needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    }
+    return nova.runTerminalCapture(payload);
   },
   onTerminalEvent(callback) {
     return nova ? nova.onTerminalEvent(callback) : () => {};
@@ -259,6 +283,63 @@ export const client = {
   async detectRuntimes() {
     if (!nova) return { runtimes: [], detectedAt: null, unavailable: true };
     return nova.detectRuntimes();
+  },
+
+  // ---- NovaDB (the IDE's own database engine) --------------------------------
+  // Outside Electron there is no main-process engine, so status resolves to an
+  // empty, flagged snapshot and every execute needs the desktop bridge. The
+  // Database workspace and the `novadb` terminal command share these methods.
+  async novaDbStatus() {
+    if (!nova || typeof nova.novaDbStatus !== 'function') {
+      return { current: null, databases: [], storagePath: null, ready: false, unavailable: true };
+    }
+    return nova.novaDbStatus();
+  },
+  async novaDbExec(sql, params = []) {
+    requireBridgeMethod('novaDbExec', 'NovaDB');
+    return nova.novaDbExec(sql, params);
+  },
+  // NovaDB external connector (loopback TCP server). Status degrades gracefully
+  // off-desktop; toggling it needs the desktop bridge.
+  async novaDbConnectorStatus() {
+    if (!nova || typeof nova.novaDbConnectorStatus !== 'function') {
+      return { running: false, enabled: false, host: '127.0.0.1', port: 0, token: null, unavailable: true };
+    }
+    return nova.novaDbConnectorStatus();
+  },
+  async novaDbConnectorConfigure(patch) {
+    requireBridgeMethod('novaDbConnectorConfigure', 'the NovaDB external connector');
+    return nova.novaDbConnectorConfigure(patch);
+  },
+
+  // ---- Deploy (build / preview / export the opened project) -----------------
+  // All of these need the desktop bridge (they run commands and touch the
+  // workspace). Preview status degrades gracefully so the panel can render.
+  async deployDetect(root) {
+    requireBridgeMethod('deployDetect', 'Deploy');
+    return nova.deployDetect(root);
+  },
+  async deployBuild(payload) {
+    requireBridgeMethod('deployBuild', 'Deploy build');
+    return nova.deployBuild(payload);
+  },
+  async deployExport(payload) {
+    requireBridgeMethod('deployExport', 'Deploy export');
+    return nova.deployExport(payload);
+  },
+  async deployPreviewStatus() {
+    if (!nova || typeof nova.deployPreviewStatus !== 'function') {
+      return { running: false, url: null, port: null };
+    }
+    return nova.deployPreviewStatus();
+  },
+  async deployPreviewStart(payload) {
+    requireBridgeMethod('deployPreviewStart', 'Deploy preview');
+    return nova.deployPreviewStart(payload);
+  },
+  async deployPreviewStop() {
+    if (!nova || typeof nova.deployPreviewStop !== 'function') return { running: false, url: null, port: null };
+    return nova.deployPreviewStop();
   },
 
   // ---- NovaLink peer-to-peer collaboration -----------------------------------

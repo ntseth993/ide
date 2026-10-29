@@ -22,6 +22,21 @@ const LEVEL_GUIDANCE = {
   advanced: 'Assume deep expertise: be terse, mention edge cases, complexity and failure modes only.',
 };
 
+// A provider-agnostic tool protocol. Any chat model can follow it because it
+// is plain text in a fenced block, not native function-calling, so Agent mode
+// works identically across OpenAI, Anthropic, Gemini, Groq, OpenRouter and
+// Ollama. The renderer parses these blocks, runs them, and feeds results back.
+const TOOL_PROTOCOL = [
+  'You can act on the workspace with tools. To use one, emit a fenced block tagged novacode-tool containing exactly one JSON object, then STOP and wait for the result before continuing. Never invent tool output.',
+  'Available tools and their JSON shape:',
+  '{"tool":"run_command","args":{"command":"<shell command>","cwd":"<optional folder>"}}',
+  '{"tool":"read_file","args":{"path":"<relative/file/path>"}}',
+  '{"tool":"write_file","args":{"path":"<relative/file/path>","content":"<full new file text>"}}',
+  'Emit one block per tool call; you may emit several in one message to do independent work at once.',
+  'run_command asks the user to approve before it runs; read_file and write_file run automatically. write_file is offered as a diff the user must accept.',
+  'Use tools only when they genuinely move the task forward (run tests, read a file you need, apply an edit). When the task is done, give the final answer without any novacode-tool block.',
+];
+
 /**
  * Chat system prompt.
  * @param {{mode:'agent'|'ask', level:string, activeFile?:{name:string,language:string}, workspaceName?:string}} options
@@ -35,10 +50,11 @@ export function buildChatSystemPrompt({ mode = 'ask', level = 'beginner', active
 
   if (mode === 'agent') {
     parts.push(
-      'You are in Agent mode: act autonomously on the open file.',
-      'Start with a two or three line plan, then return the COMPLETE updated file in exactly one fenced code block tagged with the file language so it can be applied as a diff.',
-      'Change only what the request needs; preserve everything else in the file verbatim, including comments and blank lines.',
-      'If a new file is required, emit a second fenced block preceded by a line reading NEW FILE: <relative/path>.',
+      'You are in Agent mode: act autonomously on the open project.',
+      'Start with a two or three line plan.',
+      ...TOOL_PROTOCOL,
+      'To change the open file, prefer the write_file tool with the COMPLETE updated file so it can be reviewed as a diff; alternatively return the complete updated file in one fenced code block tagged with its language.',
+      'Change only what the request needs; preserve everything else verbatim, including comments and blank lines.',
       'If the request is ambiguous, make the most reasonable choice, apply it, and state the assumption in one line.',
     );
   } else {

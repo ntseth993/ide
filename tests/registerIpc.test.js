@@ -35,6 +35,9 @@ const fsStubs = {
 const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), redact: (v) => v };
 const services = {
   getWindow: () => null,
+  app: { quit: vi.fn(), getVersion: () => '1.0.0' },
+  createNewWindow: vi.fn(() => ({ ok: true })),
+  openFileForWindow: vi.fn(async () => ({ ok: true })),
   ipcMain: ipcMainStub,
   shell: shellStub,
   fs: fsStubs,
@@ -75,7 +78,7 @@ const services = {
     cancelTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
     saveTransfer: vi.fn(async (transferId, opts) => ({ ok: true, transferId, ...opts })),
   },
-  terminal: { start: vi.fn(), cancel: vi.fn(), profiles: vi.fn(() => ({ platform: 'win32', defaultId: 'powershell', profiles: [{ id: 'powershell', label: 'PowerShell', default: true }] })) },
+  terminal: { start: vi.fn(), cancel: vi.fn(), runCapture: vi.fn(async (p) => ({ output: '', code: 0, signal: null, ...p })), profiles: vi.fn(() => ({ platform: 'win32', defaultId: 'powershell', profiles: [{ id: 'powershell', label: 'PowerShell', default: true }] })) },
   settings: { load: vi.fn(async () => ({})), save: vi.fn(async () => ({})) },
   secretStore: { setSecret: vi.fn(), clearSecret: vi.fn(), getSecretSource: vi.fn(async () => null) },
   ai: { start: vi.fn(), complete: vi.fn(async () => ({ text: 'x' })), cancel: vi.fn(), checkConnection: vi.fn() },
@@ -87,6 +90,10 @@ const services = {
     cancel: vi.fn(async () => ({ ok: true })),
   },
   logger,
+  novadb: {
+    status: vi.fn(() => ({ current: 'appdb', databases: [{ name: 'appdb', isCurrent: true, tables: [] }], storagePath: '/tmp/novadb.json', ready: true })),
+    execute: vi.fn((sql, params) => ({ ok: true, type: 'select', columns: ['ok'], rows: [{ ok: 1 }], rowCount: 1, sql, params })),
+  },
 };
 
 let registerIpcFailedOnce = false;
@@ -113,7 +120,7 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    expect(channels.size).toBe(60);
+    expect(channels.size).toBe(67);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -124,8 +131,8 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(60);
-    expect(result.channelCount).toBe(60);
+    expect(secondChannels.size).toBe(67);
+    expect(result.channelCount).toBe(67);
   });
 
   it('exposes the provider catalog and account channels', async () => {
@@ -250,17 +257,25 @@ describe('IPC argument contract', () => {
 
   it('terminal and ai payloads pass through untouched', async () => {
     await call('terminal:start', { cwd: 'C:\\w', command: 'node -v', profile: 'cmd' });
-    expect(services.terminal.start).toHaveBeenCalledWith({ cwd: 'C:\\w', command: 'node -v', profile: 'cmd' });
+    // Streaming channels now also receive a per-window emitter as a 2nd arg.
+    expect(services.terminal.start).toHaveBeenCalledWith({ cwd: 'C:\\w', command: 'node -v', profile: 'cmd' }, expect.any(Function));
     const profiles = await call('terminal:profiles');
     expect(profiles).toMatchObject({ defaultId: 'powershell' });
     await call('ai:cancel', 'run-1');
     expect(services.ai.cancel).toHaveBeenCalledWith('run-1');
     const completionPayload = { provider: 'openai', messages: [{ role: 'user', content: 'def' }] };
     await expect(call('ai:complete', completionPayload)).resolves.toMatchObject({ text: 'x' });
-    expect(services.ai.complete).toHaveBeenCalledWith(completionPayload);
+    expect(services.ai.complete).toHaveBeenCalledWith(completionPayload, expect.any(Function));
     // The channel is always invoked with a payload object, never a bare event.
     await call('ai:complete');
-    expect(services.ai.complete).toHaveBeenLastCalledWith({});
+    expect(services.ai.complete).toHaveBeenLastCalledWith({}, expect.any(Function));
+  });
+
+  it('exposes window and lifecycle channels', async () => {
+    expect(await call('window:new')).toMatchObject({ ok: true });
+    expect(await call('app:quit')).toMatchObject({ ok: true });
+    expect(await call('dialog:open-file')).toMatchObject({ ok: true });
+    expect(await call('window:close')).toMatchObject({ ok: true });
   });
 
   it('routes NovaLink actions to the service and validates ids', async () => {
@@ -283,5 +298,22 @@ describe('IPC argument contract', () => {
   it('guard errors propagate with their message', async () => {
     await expect(call('fs:read-dir', { root: '', target: '' })).rejects.toThrow(/Open a folder first/);
     await expect(call('fs:read-dir', {})).rejects.toThrow(/Open a folder first/);
+  });
+
+  it('forwards NovaDB statements and binds params; rejects empty SQL', async () => {
+    services.novadb.execute.mockClear();
+    const result = await call('db:execute', { sql: 'SELECT * FROM users WHERE id = ?', params: [7] });
+    expect(services.novadb.execute).toHaveBeenCalledWith('SELECT * FROM users WHERE id = ?', [7]);
+    expect(result).toMatchObject({ ok: true, type: 'select', rowCount: 1 });
+
+    // Non-array params are normalised to [] so the arity check stays honest.
+    await call('db:execute', { sql: 'SHOW DATABASES', params: 'nope' });
+    expect(services.novadb.execute).toHaveBeenLastCalledWith('SHOW DATABASES', []);
+
+    await expect(call('db:execute', { sql: '   ' })).rejects.toThrow(/SQL statement is required/i);
+    await expect(call('db:execute', {})).rejects.toThrow(/SQL statement is required/i);
+
+    const status = await call('db:status');
+    expect(status).toMatchObject({ ready: true, current: 'appdb' });
   });
 });

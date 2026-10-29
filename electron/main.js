@@ -7,7 +7,7 @@
  * calls, secret storage) lives in this process; the renderer is fully
  * sandboxed and only sees the explicit preload bridge.
  */
-const { app, BrowserWindow, session, protocol, shell, Menu, dialog, nativeTheme } = require('electron');
+const { app, BrowserWindow, session, protocol, shell, Menu, dialog, nativeTheme, webContents } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -25,6 +25,10 @@ const { createAuthFlow } = require('./services/authFlow');
 const fsService = require('./services/fsService');
 const { createAiService } = require('./services/aiService');
 const { createNovaLink } = require('./services/novalink');
+const { createNovaDbService } = require('./services/novadb/novaDbService');
+const { createNovaDbServer } = require('./services/novadb/novaDbServer');
+const { createDeployService } = require('./services/deploy/deployService');
+const { createPreviewServer } = require('./services/deploy/previewServer');
 const { registerIpc } = require('./ipc/registerIpc');
 const { buildMenuTemplate } = require('./menu');
 const { loadEnv } = require('./services/env');
@@ -40,7 +44,12 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
 ]);
 
+// Every open IDE window. `mainWindow` is only the most recently focused one
+// (the default target for menus, dialogs, and CLI opens); privileged IPC is
+// attributed to the *sending* window, so all windows work independently.
 let mainWindow = null;
+const liveWindows = new Set();
+const trustedSenders = new Set(); // webContents ids allowed on privileged IPC
 let terminalService = null;
 let aiService = null;
 let changeHistory = null;
@@ -49,6 +58,10 @@ let runtimeService = null;
 let authService = null;
 let authFlow = null;
 let novalinkService = null;
+let novaDbService = null;
+let novaDbServer = null;
+let deployService = null;
+let previewServer = null;
 let pendingOpenRequest = null;
 
 // CLI entry (`nova`, `nova .`, `nova <folder|file>`): parse the launcher's
@@ -91,16 +104,68 @@ function buildOpenRequest(target) {
     : { kind: 'file', path: resolved };
 }
 
-/** Deliver an open request to the renderer once its bridge is listening. */
-function requestOpen(request) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  logger.info('cli open request', request);
-  const send = () => mainWindow?.webContents.send('workspace:request', request);
-  if (mainWindow.webContents.isLoading()) {
-    mainWindow.webContents.once('did-finish-load', send);
+/** The window to attribute a user-initiated action to (menu, dialog, CLI). */
+function activeWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && liveWindows.has(focused)) return focused;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  return [...liveWindows].find((win) => !win.isDestroyed()) || null;
+}
+
+/** Send to every live window (global state: NovaLink, auth session). */
+function broadcast(channel, payload) {
+  for (const win of liveWindows) {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
+/**
+ * Build an emitter bound to one webContents, so streamed service events
+ * (terminal output, AI deltas) return to the window that started the run
+ * instead of whichever window happens to be focused.
+ */
+function emitTo(senderId, channel) {
+  return (payload) => {
+    const wc = webContents.fromId(senderId);
+    if (wc && !wc.isDestroyed()) wc.send(channel, payload);
+  };
+}
+
+function isTrustedSender(wc) {
+  return Boolean(wc) && trustedSenders.has(wc.id);
+}
+
+function windowForSender(wc) {
+  return wc ? BrowserWindow.fromWebContents(wc) : null;
+}
+
+/** Deliver an open request to a window (defaults to the active one). */
+function requestOpen(request, target) {
+  const win = target || activeWindow();
+  if (!win || win.isDestroyed()) return;
+  logger.info('open request', request);
+  const send = () => {
+    if (!win.isDestroyed()) win.webContents.send('workspace:request', request);
+  };
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', send);
   } else {
     send();
   }
+}
+
+/** Native file picker that opens a single file into the requesting window. */
+async function pickAndOpenFile(win) {
+  const target = win && !win.isDestroyed() ? win : activeWindow();
+  if (!target) return { ok: false };
+  const { canceled, filePaths } = await dialog.showOpenDialog(target, {
+    title: 'Open File',
+    buttonLabel: 'Open',
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths?.length) return { ok: false };
+  requestOpen({ kind: 'file', path: filePaths[0] }, target);
+  return { ok: true };
 }
 
 const DIST_DIR = path.join(__dirname, '..', 'dist');
@@ -145,7 +210,9 @@ function applyAppearance(payload) {
   const changed = appearance.background !== lastAppearance.background || appearance.kind !== lastAppearance.kind;
   lastAppearance = appearance;
   nativeTheme.themeSource = appearance.kind;
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setBackgroundColor(appearance.background);
+  for (const win of liveWindows) {
+    if (win && !win.isDestroyed()) win.setBackgroundColor(appearance.background);
+  }
   if (changed) {
     // Fire-and-forget: appearance is a nicety, never worth blocking the app.
     fspWriteFile(APPEARANCE_PATH, JSON.stringify(appearance));
@@ -250,7 +317,7 @@ async function net_fetchFile(filePath) {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1500,
     height: 960,
     minWidth: 1024,
@@ -269,21 +336,31 @@ function createWindow() {
     },
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  liveWindows.add(win);
+  trustedSenders.add(win.webContents.id);
+  mainWindow = win;
+
+  win.on('focus', () => {
+    mainWindow = win;
+  });
+
+  win.on('closed', () => {
+    liveWindows.delete(win);
+    trustedSenders.delete(win.webContents.id);
+    if (mainWindow === win) mainWindow = activeWindow();
   });
 
   // Match the remembered theme before the renderer paints its first frame.
   nativeTheme.themeSource = lastAppearance.kind;
 
   // No popups; external links go to the system browser over http(s) only.
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
 
   // Block in-window navigation away from our own origins.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  win.webContents.on('will-navigate', (event, url) => {
     const allowed = app.isPackaged
       ? url.startsWith(APP_ORIGIN)
       : url.startsWith(DEV_SERVER_URL);
@@ -294,20 +371,22 @@ function createWindow() {
   });
 
   if (app.isPackaged) {
-    mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
+    win.loadURL(`${APP_ORIGIN}/index.html`);
   } else {
-    mainWindow.loadURL(DEV_SERVER_URL);
+    win.loadURL(DEV_SERVER_URL);
   }
 
   // The renderer only learns its theme after the settings IPC round-trip, so
   // tint the canvas with the remembered colour as soon as the DOM exists —
   // otherwise a light theme flashes dark for the first frames.
-  mainWindow.webContents.on('dom-ready', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.webContents.insertCSS(
+  win.webContents.on('dom-ready', () => {
+    if (win.isDestroyed()) return;
+    win.webContents.insertCSS(
       `:root{--nc-startup-bg:${lastAppearance.background};}`,
     ).catch(() => { /* cosmetic only */ });
   });
+
+  return win;
 }
 
 /**
@@ -316,11 +395,14 @@ function createWindow() {
  * roles (undo/redo/cut/copy/paste) are handled by Chromium directly.
  */
 function installMenu() {
-  const send = (commandId) => mainWindow?.webContents.send('menu:command', commandId);
+  const send = (commandId) => {
+    const win = activeWindow();
+    if (win) win.webContents.send('menu:command', commandId);
+  };
   const menu = Menu.buildFromTemplate(buildMenuTemplate({
     send,
     showAbout: () => {
-      dialog.showMessageBox(mainWindow, {
+      dialog.showMessageBox(activeWindow(), {
         type: 'info',
         title: 'About NovaCode',
         message: `NovaCode IDE ${app.getVersion()}`,
@@ -329,7 +411,7 @@ function installMenu() {
       });
     },
     showDocs: () => {
-      dialog.showMessageBox(mainWindow, {
+      dialog.showMessageBox(activeWindow(), {
         type: 'info',
         title: 'NovaCode Documentation',
         message: 'NovaCode documentation',
@@ -341,6 +423,8 @@ function installMenu() {
         buttons: ['OK'],
       });
     },
+    onOpenFile: () => pickAndOpenFile(activeWindow()),
+    onNewWindow: () => createWindow(),
   }));
   Menu.setApplicationMenu(menu);
 }
@@ -360,7 +444,7 @@ function wireServices() {
 
   terminalService = createTerminalService({
     logger,
-    onEvent: (payload) => mainWindow?.webContents.send('terminal:event', payload),
+    onEvent: (payload) => broadcast('terminal:event', payload),
   });
 
   authService = createAuthService({
@@ -379,10 +463,11 @@ function wireServices() {
     readSecret: (name) => secretStore.getSecret(name),
     openBrowser: (url) => shell.openExternal(url),
     onSession: (account) => {
-      mainWindow?.webContents.send('auth:session', account);
-      if (mainWindow) {
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.focus();
+      broadcast('auth:session', account);
+      const win = activeWindow();
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.focus();
       }
     },
   });
@@ -391,7 +476,7 @@ function wireServices() {
     logger,
     secretStore,
     auth: authService,
-    onEvent: (payload) => mainWindow?.webContents.send('ai:event', payload),
+    onEvent: (payload) => broadcast('ai:event', payload),
   });
 
   changeHistory = createChangeHistory({
@@ -417,11 +502,40 @@ function wireServices() {
   novalinkService = createNovaLink({
     userDataDir: USER_DATA,
     logger,
-    onEvent: (payload) => mainWindow?.webContents.send('novalink:event', payload),
+    onEvent: (payload) => broadcast('novalink:event', payload),
   }).service;
   novalinkService.start().catch((error) => logger.error('novalink start failed', { error: error.message }));
 
-  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow };
+  // NovaDB — the IDE's own database engine, persisted as a JSON snapshot under
+  // userData so schemas and records survive a restart. The Database workspace
+  // and the `novadb` terminal command both drive this single instance.
+  novaDbService = createNovaDbService({
+    filePath: path.join(USER_DATA, 'novacode-novadb.json'),
+    logger,
+  });
+
+  // External connector (Stage 4) — a loopback-only TCP server so a SEPARATE
+  // Node/Express program can talk to the same engine. Config (enabled/port/
+  // token) persists in its own file; it auto-starts only if the user enabled it
+  // previously, and never binds beyond 127.0.0.1. The renderer toggles it from
+  // the Database workspace's Integrate card.
+  novaDbServer = createNovaDbServer({
+    db: novaDbService,
+    configPath: path.join(USER_DATA, 'novacode-novadb-connector.json'),
+    logger,
+  });
+  if (novaDbServer.status().enabled) {
+    novaDbServer.start().catch((error) => logger.error('novadb connector start failed', { error: error.message }));
+  }
+
+  // Deploy workspace (Phase: deploy) — build/preview/export the user's project.
+  // build() shells out through the terminal service's runCapture (workspace-
+  // confined); the preview server binds loopback only. No hosting tokens are
+  // ever stored here — publishing to a real host stays a transparent command.
+  deployService = createDeployService({ runCapture: (opts) => terminalService.runCapture(opts), logger });
+  previewServer = createPreviewServer({ logger });
+
+  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow, novaDbService, novaDbServer, deployService, previewServer };
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -429,9 +543,10 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
+    const win = activeWindow();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
     }
     // A second `nova <path>` launch forwards its target into this window.
     const args = argv.slice(app.isPackaged ? 1 : 2);
@@ -446,9 +561,13 @@ if (!gotLock) {
     applySecurityHeaders();
     if (app.isPackaged) registerAppProtocol();
 
-    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth } = wireServices();
+    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth, novaDbService: novadb, novaDbServer: novadbConnector, deployService: deploy, previewServer: preview } = wireServices();
     registerIpc({
-      getWindow: () => mainWindow,
+      isTrustedSender,
+      getWindowForSender: windowForSender,
+      emitTo,
+      createNewWindow: () => { createWindow(); return { ok: true }; },
+      openFileForWindow: (win) => pickAndOpenFile(win),
       settings: settingsService,
       secretStore,
       terminal: terminalService,
@@ -459,6 +578,10 @@ if (!gotLock) {
       registry,
       runtime,
       novalink: novalinkService,
+      novadb,
+      novadbConnector,
+      deploy,
+      preview,
       applyAppearance,
       logger,
     });
@@ -486,5 +609,8 @@ if (!gotLock) {
     aiService?.dispose();
     authFlow?.cancel?.();
     novalinkService?.dispose();
+    previewServer?.dispose?.();
+    novaDbServer?.dispose?.();
+    novaDbService?.dispose?.();
   });
 }

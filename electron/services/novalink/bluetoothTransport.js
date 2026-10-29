@@ -7,10 +7,14 @@
  *   PowerShell, using only Node built-ins:
  *     • enumerate the Bluetooth adapter and infer its power state
  *       (Windows disables the adapter device when Bluetooth is toggled off),
+ *     • read the Bluetooth Support Service (bthserv) status, so we can tell
+ *       "no adapter" from "adapter present but Bluetooth is off", and report a
+ *       structured capability (adapterPresent / powered / serviceRunning /
+ *       canScan / discoverable) for the UI,
  *     • attempt to ENABLE the adapter when it is disabled,
  *     • enumerate ALL surrounding Bluetooth devices the OS can see (any
- *       device — phones, headphones, other PCs — not just NovaCode), so the
- *       UI can show what is actually around this machine.
+ *       device — phones, headphones, other PCs — not just NovaCode), marking
+ *       which are currently connected, so the UI shows what is really around.
  *
  *   It CANNOT (and never pretends to):
  *     • discover arbitrary *unpaired* BLE advertisers on Windows from pure
@@ -42,6 +46,13 @@ const LIST_DEVICES_CMD =
   "Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue | " +
   "Select-Object FriendlyName, InstanceId, Status, ConfigManagerErrorCode | " +
   "ConvertTo-Json -Compress";
+
+/**
+ * The Bluetooth Support Service (bthserv) must be running for the stack to
+ * work at all — a reliable, non-async signal of real system support.
+ */
+const SERVICE_CMD =
+  "Get-Service bthserv -ErrorAction SilentlyContinue | Select-Object Name, Status | ConvertTo-Json -Compress";
 
 /** Enable a specific adapter device (fails without elevation → caller falls back). */
 const ENABLE_DEVICE_CMD_TPL =
@@ -129,15 +140,20 @@ function derivePowerState(devices) {
 }
 
 async function probeWindowsBluetooth({ runPs = runPowerShell } = {}) {
-  const result = await runPs(LIST_DEVICES_CMD);
-  if (!result.ok && !result.stdout.trim()) {
-    return { devices: [], power: 'unknown', detail: (result.stderr || 'Bluetooth query failed.').trim().slice(0, 200) };
+  const [devResult, svcResult] = await Promise.all([
+    runPs(LIST_DEVICES_CMD),
+    runPs(SERVICE_CMD),
+  ]);
+  const serviceRunning = parseServiceStatus(svcResult.stdout) === 'Running';
+  if (!devResult.ok && !devResult.stdout.trim()) {
+    return { devices: [], power: 'unknown', serviceRunning, detail: (devResult.stderr || 'Bluetooth query failed.').trim().slice(0, 200) };
   }
-  const devices = parseDeviceJson(result.stdout);
+  const devices = parseDeviceJson(devResult.stdout);
   return {
     devices,
     power: derivePowerState(devices),
-    detail: result.stderr?.trim().slice(0, 200) || null,
+    serviceRunning,
+    detail: devResult.stderr?.trim().slice(0, 200) || null,
   };
 }
 
@@ -153,6 +169,44 @@ function detectAdapter({ platform = process.platform, runProbe } = {}) {
     }).catch((error) => ({ state: 'unknown', detail: `Probe failed: ${error.message}` }));
   }
   return Promise.resolve({ state: 'unknown', detail: `No adapter probe for "${platform}".` });
+}
+
+/** Read the bthserv status ('Running' | 'Stopped' | null) from Get-Service JSON. */
+function parseServiceStatus(stdout) {
+  const text = String(stdout || '').trim();
+  if (!text) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const row = Array.isArray(parsed) ? parsed[0] : parsed;
+  return (row && (row.Status || row.status)) || null;
+}
+
+/**
+ * Turn the raw probe into an honest, structured capability report the UI can
+ * render verbatim. Data transfer over the raw radio is reported as unsupported
+ * with the concrete workaround, never faked as available.
+ */
+function deriveCapability({ devices, power, serviceRunning }) {
+  const adapterPresent = devices.some(isAdapterRow) || power !== 'absent';
+  const powered = power === 'on';
+  return {
+    adapterPresent,
+    powered,
+    power,
+    serviceRunning: Boolean(serviceRunning),
+    canScan: adapterPresent && powered,
+    // Best-effort: Windows marks the radio discoverable only when it is on and
+    // the stack is running; we cannot read IsDiscoverable without a native call.
+    discoverable: powered && Boolean(serviceRunning),
+    dataSupported: false,
+    dataReason: UNSUPPORTED_REASON,
+    dataWorkaround:
+      'To actually send messages/files/images over Bluetooth, pair the two PCs and connect them through a Bluetooth network (PAN) — NovaLink then runs over that link with its existing encrypted transport. Otherwise use the Wi-Fi / Ethernet Local network transport today.',
+  };
 }
 
 function createBluetoothTransport({ logger = console, platform = process.platform, runPs = runPowerShell } = {}) {
@@ -186,13 +240,17 @@ function createBluetoothTransport({ logger = console, platform = process.platfor
     off: (event, cb) => events.off(event, cb),
 
     async getStatus() {
-      const { devices, power, detail } = await probe();
+      const { devices, power, serviceRunning, detail } = await probe();
+      const capability = deriveCapability({ devices, power, serviceRunning });
       return {
         available: running && power === 'on',
         supported: false,
         reason: UNSUPPORTED_REASON,
         hostname: os.hostname(),
         power, // 'on' | 'off' | 'absent' | 'unknown'
+        serviceRunning,
+        discoverable: capability.discoverable,
+        capability,
         deviceCount: devices.length,
         adapters: devices.filter(isAdapterRow).map((a) => ({
           kind: 'bluetooth',
@@ -252,15 +310,19 @@ function createBluetoothTransport({ logger = console, platform = process.platfor
 
     /** All Bluetooth devices the OS can see — any device, not just NovaCode. */
     async scanDevices() {
-      const { devices, power, detail } = await probe();
+      const { devices, power, serviceRunning, detail } = await probe();
+      const capability = deriveCapability({ devices, power, serviceRunning });
       return {
         ok: power !== 'absent',
         power,
+        serviceRunning,
+        capability,
         scannedAt: Date.now(),
         devices: devices.map((d) => ({
           name: d.name,
           status: d.status,
           isAdapter: isAdapterRow(d),
+          connected: !isAdapterRow(d) && d.status === 'OK',
         })),
         detail,
       };
@@ -281,6 +343,8 @@ module.exports = {
   detectAdapter,
   probeWindowsBluetooth,
   parseDeviceJson,
+  parseServiceStatus,
   derivePowerState,
+  deriveCapability,
   UNSUPPORTED_REASON,
 };

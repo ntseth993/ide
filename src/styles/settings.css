@@ -27,6 +27,31 @@
   overscroll-behavior: contain;
 }
 
+/* --- Settings opened as an editor-area tab (where code lives) -------------- */
+/* The panel fills the editor column and its content is centered to a readable
+   measure instead of stretching edge-to-edge on wide monitors. */
+.editor-settings {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--bg);
+}
+.editor-settings .settings-panel {
+  flex: 1;
+  min-width: 0;
+}
+.editor-settings .settings-header {
+  padding: 0.9rem 1rem 0.5rem;
+  max-width: 880px;
+  margin: 0 auto;
+  width: 100%;
+}
+.editor-settings .settings-scroll {
+  max-width: 880px;
+  margin: 0 auto;
+  width: 100%;
+}
+
 .settings-group {
   position: relative;
   /* flex-shrink:0 is the actual fix — a column flex parent would otherwise

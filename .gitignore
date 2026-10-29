@@ -6,6 +6,9 @@ dist/
 release/
 .vite/
 
+# NovaLink same-machine test companion (isolated user-data dir)
+.novacode-pair/
+
 # secrets & environment
 .env
 .env.*

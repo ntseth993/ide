@@ -23,8 +23,11 @@ import WelcomeScreen from './components/WelcomeScreen';
 import HistoryPanel from './components/HistoryPanel';
 import ExtensionsView from './components/ExtensionsView';
 import NovaLinkView from './components/NovaLinkView';
+import NovaDbView from './components/NovaDbView';
+import DeployView from './components/DeployView';
 import ShortcutsDialog from './components/ShortcutsDialog';
 import SignInDialog from './components/SignInDialog';
+import Onboarding from './components/Onboarding';
 import * as bus from './services/bus';
 import { languageRunCommand } from './services/languageSupport';
 import { getLanguage } from './utils/language';
@@ -34,6 +37,7 @@ import { registerInlineAI } from './services/inlineAI';
 
 const RECENT_KEY = 'novacode-recent';
 const RECENT_LIMIT = 8;
+const ONBOARDED_KEY = 'novacode-onboarded';
 
 function sessionKey(root) {
   return `novacode-session:${normalizePath(root)}`;
@@ -56,6 +60,8 @@ export default function App() {
   const [leftView, setLeftView] = useState('explorer');
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [rightMode, setRightMode] = useState('ai'); // ai | settings | none
+  // Settings opens as a tab in the editor area (where code lives), not the side panel.
+  const [specialTab, setSpecialTab] = useState(null); // 'settings' | null
 
   const [tabs, setTabs] = useState([]);
   const [activePath, setActivePath] = useState('');
@@ -93,6 +99,15 @@ export default function App() {
       return [];
     }
   });
+  // First-run onboarding tour: show the wizard until the user finishes it,
+  // then remember so it never interrupts again (replayable from the palette).
+  const [onboardingOpen, setOnboardingOpen] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDED_KEY) !== '1';
+    } catch {
+      return false;
+    }
+  });
   const toastId = useRef(0);
   const docsRef = useRef(docs);
   docsRef.current = docs;
@@ -103,14 +118,20 @@ export default function App() {
   // Latest AI/editor state for the inline completion provider, which must read
   // current values without being re-registered on every keystroke.
   const inlineAIConfigRef = useRef({});
+  // Inline ghost-text can run on its own fast provider/model; when it targets a
+  // different provider than chat we omit the baseUrl so the main process uses
+  // that provider's registry default instead of the chat endpoint.
+  const inlineFollowsChatProvider = !settings.ai.inlineProvider || settings.ai.inlineProvider === settings.ai.provider;
   inlineAIConfigRef.current = {
     enabled: Boolean(settings.inlineAI),
     signedIn: Boolean(account),
-    provider: settings.ai.provider,
-    model: settings.ai.model,
-    baseUrl: settings.ai.baseUrl,
+    provider: settings.ai.inlineProvider || settings.ai.provider,
+    model: settings.ai.inlineModel || settings.ai.model,
+    baseUrl: inlineFollowsChatProvider ? settings.ai.baseUrl : '',
     tabSize: settings.tabSize,
     path: activePath ? normalizePath(activePath) : null,
+    // Inline completions wait for any streaming chat turn to finish first.
+    chatBusy: Boolean(aiStreamingRunId),
   };
 
   const notify = useCallback((text, tone = 'info') => {
@@ -351,6 +372,7 @@ export default function App() {
       }
       setTabs((current) => (current.includes(filePath) ? current : [...current, filePath]));
       setActivePath(filePath);
+      setSpecialTab(null);
       if (revealLine) {
         setRevealRequest({ path: filePath, line: revealLine, ts: Date.now() });
       }
@@ -705,6 +727,13 @@ export default function App() {
     notify(`Running ${baseName(filePath)}…`);
   }, [notify, setLayout, workspaceRoot]);
 
+  // Settings and NovaLink open as tabs in the editor area, alongside the code,
+  // so they get the full workbench width instead of the cramped side panel.
+  const openSettings = useCallback(() => setSpecialTab('settings'), []);
+  const openNovaLink = useCallback(() => setSpecialTab('novalink'), []);
+  const openNovaDb = useCallback(() => setSpecialTab('novadb'), []);
+  const openDeploy = useCallback(() => setSpecialTab('deploy'), []);
+
   // ---- extensions -------------------------------------------------------------
   const refreshExtensions = useCallback(async () => {
     try {
@@ -817,15 +846,15 @@ export default function App() {
     return () => handle.dispose();
   }, [monacoApi]);
 
-  // Detect language runtimes once when the Settings panel opens.
+  // Detect language runtimes once when the Settings tab opens.
   useEffect(() => {
-    if (rightMode !== 'settings' || runtimes) return;
+    if (specialTab !== 'settings' || runtimes) return;
     let active = true;
     client.detectRuntimes()
       .then((data) => { if (active) setRuntimes(data); })
       .catch(() => { /* surfaced in the panel via null state */ });
     return () => { active = false; };
-  }, [rightMode, runtimes]);
+  }, [specialTab, runtimes]);
 
   // ---- NovaLink -------------------------------------------------------------
   // Read the current editor selection so the NovaLink panel can offer "Share
@@ -878,6 +907,15 @@ export default function App() {
           setExpanded(new Set());
         },
       },
+      { id: 'new-window', label: 'File: New Window', hint: 'Ctrl+Shift+N', run: () => client.newWindow() },
+      {
+        id: 'open-file',
+        label: 'File: Open File…',
+        hint: 'Ctrl+Alt+O',
+        run: () => { client.openFile().catch((error) => notify(toUserMessage(error), 'error')); },
+      },
+      { id: 'close-window', label: 'File: Close Window', hint: 'Alt+F4', run: () => client.closeWindow() },
+      { id: 'app-quit', label: 'File: Exit', run: () => client.quitApp() },
       { id: 'editor.find', label: 'Edit: Find', hint: 'Ctrl+F', run: () => runEditorAction('actions.find') },
       { id: 'editor.replace', label: 'Edit: Replace', hint: 'Ctrl+H', run: () => runEditorAction('editor.action.startFindReplaceAction') },
       { id: 'editor.undo', label: 'Edit: Undo', hint: 'Ctrl+Z', run: () => runEditorAction('undo') },
@@ -915,7 +953,9 @@ export default function App() {
       { id: 'view.explorer', label: 'View: Explorer', hint: 'Ctrl+Shift+E', run: () => { setLeftView('explorer'); setSidebarVisible(true); } },
       { id: 'view.search', label: 'View: Search', run: () => { setLeftView('search'); setSidebarVisible(true); } },
       { id: 'view.extensions', label: 'View: Extensions', hint: 'Ctrl+Shift+X', run: () => { setLeftView('extensions'); setSidebarVisible(true); } },
-      { id: 'view.novalink', label: 'View: NovaLink (peer collaboration)', run: () => { setLeftView('novalink'); setSidebarVisible(true); } },
+      { id: 'view.novalink', label: 'View: NovaLink (peer collaboration)', hint: 'Ctrl+Shift+L', run: openNovaLink },
+      { id: 'view.novadb', label: 'View: Database (NovaDB)', hint: 'Ctrl+Shift+D', run: openNovaDb },
+      { id: 'view.deploy', label: 'View: Deploy (build & preview project)', hint: 'Ctrl+Shift+B', run: openDeploy },
       { id: 'toggle-terminal', label: 'View: Toggle Terminal', hint: 'Ctrl+`', run: () => setLayout({ terminalVisible: !layout.terminalVisible }) },
       { id: 'view.terminal', label: 'View: Terminal', run: () => setLayout({ terminalVisible: true }) },
       {
@@ -940,8 +980,8 @@ export default function App() {
       { id: 'toggle-ai', label: 'View: Toggle AI Panel', run: () => setRightMode((mode) => (mode === 'ai' ? 'none' : 'ai')) },
       { id: 'view.ai', label: 'View: AI Assistant', hint: 'Ctrl+Shift+A', run: () => setRightMode('ai') },
       { id: 'view.history', label: 'View: Change History', run: () => setRightMode('history') },
-      { id: 'view.settings', label: 'View: Open Settings', hint: 'Ctrl+,', run: () => setRightMode('settings') },
-      { id: 'open-settings', label: 'View: Open Settings', run: () => setRightMode('settings') },
+      { id: 'view.settings', label: 'View: Open Settings', hint: 'Ctrl+,', run: openSettings },
+      { id: 'open-settings', label: 'View: Open Settings', run: openSettings },
       { id: 'open-history', label: 'View: Open Change History', run: () => setRightMode('history') },
       { id: 'open-palette', label: 'View: Command Palette', hint: 'Ctrl+P', run: () => setPaletteOpen((open) => !open) },
       {
@@ -972,11 +1012,12 @@ export default function App() {
       { id: 'run.file', label: 'Run: Run File', hint: 'F5', run: handleRunFile },
       { id: 'run.stop', label: 'Run: Stop', hint: 'Shift+F5', run: () => bus.emit('terminal:stop') },
       { id: 'help.shortcuts', label: 'Help: Keyboard Shortcuts', run: () => setShortcutsOpen(true) },
+      { id: 'help.tour', label: 'Help: Replay Tour', run: () => setOnboardingOpen(true) },
       { id: 'account.sign-in', label: 'Account: Sign In…', run: handleBeginSignIn },
       { id: 'account.sign-out', label: 'Account: Sign Out', run: handleSignOut },
     ];
     return list;
-  }, [applyTheme, closeTab, handleBeginSignIn, handleCreateFile, handleCreateFolder, handleNewProject, handleOpenFolder, handleRunFile, handleSaveAs, handleSignOut, layout.terminalVisible, runEditorAction, saveTab, setLayout, settings.autosave, settings.inlineAI, settings.theme, settings.wordWrap, update]);
+  }, [applyTheme, closeTab, handleBeginSignIn, handleCreateFile, handleCreateFolder, handleNewProject, handleOpenFolder, handleRunFile, handleSaveAs, handleSignOut, notify, openNovaLink, openNovaDb, openDeploy, openSettings, layout.terminalVisible, runEditorAction, saveTab, setLayout, settings.autosave, settings.inlineAI, settings.theme, settings.wordWrap, update]);
 
   // The native application menu dispatches these same command ids.
   const commandsRef = useRef(commands);
@@ -1029,6 +1070,31 @@ export default function App() {
     return <div className="app-loading">Starting NovaCode…</div>;
   }
 
+  const settingsPanelEl = <SettingsPanel settings={settings} update={update} runtimes={runtimes} />;
+  const novaLinkPanelEl = (
+    <NovaLinkView
+      workspaceRoot={workspaceRoot}
+      activeFilePath={activePath}
+      getEditorSelection={getEditorSelection}
+      onNotify={notify}
+      asTab
+    />
+  );
+  const novaDbPanelEl = <NovaDbView onNotify={notify} asTab />;
+  const deployPanelEl = <DeployView root={workspaceRoot} onNotify={notify} asTab />;
+  // The active non-file view (Settings / NovaLink / Database / Deploy) renders as a tab
+  // in the editor strip; only the opened one shows until it's closed.
+  const specialTabs = specialTab
+    ? [{ id: specialTab, label: specialTab === 'settings' ? 'Settings' : specialTab === 'novalink' ? 'NovaLink' : specialTab === 'deploy' ? 'Deploy' : 'Database' }]
+    : [];
+  const specialContent = specialTab === 'novalink'
+    ? novaLinkPanelEl
+    : specialTab === 'novadb'
+      ? novaDbPanelEl
+      : specialTab === 'deploy'
+        ? deployPanelEl
+        : settingsPanelEl;
+
   return (
     <div className="app-root">
       <MenuBar commands={commands} account={account} onSignIn={handleBeginSignIn} onSignOut={handleSignOut} />
@@ -1036,6 +1102,11 @@ export default function App() {
       <ActivityBar
         view={leftView}
         onView={(view) => {
+          // First click shows the panel; clicking the active one again hides it.
+          if (view === leftView && sidebarVisible) {
+            setSidebarVisible(false);
+            return;
+          }
           setLeftView(view);
           setSidebarVisible(true);
         }}
@@ -1046,9 +1117,15 @@ export default function App() {
         onToggleAiPanel={() => setRightMode((mode) => (mode === 'ai' ? 'none' : 'ai'))}
         onToggleSidebar={() => setSidebarVisible((visible) => !visible)}
         onOpenPalette={() => setPaletteOpen(true)}
-        onOpenSettings={() => setRightMode('settings')}
+        onOpenSettings={openSettings}
         onOpenHistory={() => setRightMode('history')}
-        settingsActive={rightMode === 'settings'}
+        onOpenNovaLink={openNovaLink}
+        onOpenNovaDb={openNovaDb}
+        onOpenDeploy={openDeploy}
+        settingsActive={specialTab === 'settings'}
+        novalinkActive={specialTab === 'novalink'}
+        novadbActive={specialTab === 'novadb'}
+        deployActive={specialTab === 'deploy'}
         historyActive={rightMode === 'history'}
       />
 
@@ -1070,13 +1147,6 @@ export default function App() {
                       onUninstall={handleUninstallExtension}
                       onInstalled={refreshExtensions}
                     />
-                  ) : leftView === 'novalink' ? (
-                    <NovaLinkView
-                      workspaceRoot={workspaceRoot}
-                      activeFilePath={activePath}
-                      getEditorSelection={getEditorSelection}
-                      onNotify={notify}
-                    />
                   ) : (
                     <SearchPanel root={workspaceRoot} onOpenResult={(filePath, line) => openFile(filePath, line)} />
                   )}
@@ -1085,6 +1155,19 @@ export default function App() {
               </>
             )}
             <div className="editor-column">
+              {specialTab ? (
+                <EditorArea
+                  tabs={[]}
+                  activePath=""
+                  docs={{}}
+                  settings={settings}
+                  specialTabs={specialTabs}
+                  activeSpecial={specialTab}
+                  specialContent={specialContent}
+                  onSelectSpecial={setSpecialTab}
+                  onCloseSpecial={() => setSpecialTab(null)}
+                />
+              ) : (
               <WelcomeScreen
                 recentProjects={recentProjects}
                 onOpenFolder={handleOpenFolder}
@@ -1101,6 +1184,7 @@ export default function App() {
                 theme={settings.theme}
                 onSetTheme={applyTheme}
               />
+              )}
             </div>
           </div>
         ) : (
@@ -1141,13 +1225,6 @@ export default function App() {
                         onUninstall={handleUninstallExtension}
                         onInstalled={refreshExtensions}
                       />
-                    ) : leftView === 'novalink' ? (
-                      <NovaLinkView
-                        workspaceRoot={workspaceRoot}
-                        activeFilePath={activePath}
-                        getEditorSelection={getEditorSelection}
-                        onNotify={notify}
-                      />
                     ) : (
                       <SearchPanel
                         root={workspaceRoot}
@@ -1166,7 +1243,7 @@ export default function App() {
                   docs={docs}
                   settings={settings}
                   revealRequest={revealRequest}
-                  onSelectTab={setActivePath}
+                  onSelectTab={(path) => { setSpecialTab(null); setActivePath(path); }}
                   onCloseTab={closeTab}
                   onChange={handleChange}
                   onCursor={setCursor}
@@ -1175,6 +1252,11 @@ export default function App() {
                     setMonacoApi({ monaco });
                   }}
                   language={languageOverrides[activePath] || null}
+                  specialTabs={specialTabs}
+                  activeSpecial={specialTab}
+                  specialContent={specialContent}
+                  onSelectSpecial={setSpecialTab}
+                  onCloseSpecial={() => setSpecialTab(null)}
                 />
                 <TerminalPanel
                   root={workspaceRoot}
@@ -1197,6 +1279,7 @@ export default function App() {
                         aiSettings={settings.ai}
                         activeFile={activeFile}
                         workspaceName={projectName(workspaceRoot)}
+                        workspaceRoot={workspaceRoot}
                         account={account}
                         mode={aiMode}
                         onModeChange={setAiMode}
@@ -1215,7 +1298,7 @@ export default function App() {
                           if (runId) setAiState('streaming');
                         }}
                         onProposeEdit={handleProposeEdit}
-                        onOpenSettings={() => setRightMode('settings')}
+                        onOpenSettings={openSettings}
                         onOpenHistory={() => setRightMode('history')}
                       />
                     ) : rightMode === 'history' ? (
@@ -1271,6 +1354,19 @@ export default function App() {
       <DiffReview review={review} onAccept={handleAcceptReview} onReject={() => setReview(null)} />
 
       <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+      {onboardingOpen && (
+        <Onboarding
+          onDone={() => {
+            setOnboardingOpen(false);
+            try {
+              localStorage.setItem(ONBOARDED_KEY, '1');
+            } catch {
+              /* storage unavailable */
+            }
+          }}
+        />
+      )}
 
       <SignInDialog
         open={signInOpen}

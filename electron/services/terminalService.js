@@ -53,6 +53,20 @@ function createTerminalService({ onEvent, logger }) {
     runs.delete(runId);
   }
 
+  // Terminate a spawned command and its whole child tree (Windows kill() only
+  // stops the shell, not the processes it launched).
+  function killTree(child) {
+    if (!child) return;
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    } else {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (child.exitCode === null) child.kill('SIGKILL');
+      }, 3000).unref();
+    }
+  }
+
   function profiles() {
     const list = profilesFor(process.platform);
     const defaultId = (list.find((p) => p.default) || list[0]).id;
@@ -63,7 +77,7 @@ function createTerminalService({ onEvent, logger }) {
     };
   }
 
-  function start({ root, cwd, command, profile }) {
+  function start({ root, cwd, command, profile } = {}, emit = onEvent) {
     if (typeof command !== 'string' || !command.trim()) {
       throw new PathGuardError('A command is required.');
     }
@@ -82,24 +96,24 @@ function createTerminalService({ onEvent, logger }) {
       });
     } catch (error) {
       logger.error('terminal spawn failed', { error: error.message });
-      onEvent({ runId, type: 'error', data: error.message });
-      onEvent({ runId, type: 'exit', data: JSON.stringify({ code: 127, signal: null }) });
+      emit({ runId, type: 'error', data: error.message });
+      emit({ runId, type: 'exit', data: JSON.stringify({ code: 127, signal: null }) });
       return { runId };
     }
 
     runs.set(runId, child);
     logger.info('terminal start', { runId, cwd: runCwd });
 
-    child.stdout?.on('data', (chunk) => onEvent({ runId, type: 'stdout', data: chunk.toString() }));
-    child.stderr?.on('data', (chunk) => onEvent({ runId, type: 'stderr', data: chunk.toString() }));
+    child.stdout?.on('data', (chunk) => emit({ runId, type: 'stdout', data: chunk.toString() }));
+    child.stderr?.on('data', (chunk) => emit({ runId, type: 'stderr', data: chunk.toString() }));
 
     child.on('error', (error) => {
-      onEvent({ runId, type: 'error', data: error.message });
+      emit({ runId, type: 'error', data: error.message });
       cleanup(runId);
     });
 
     child.on('close', (code, signal) => {
-      onEvent({ runId, type: 'exit', data: JSON.stringify({ code, signal }) });
+      emit({ runId, type: 'exit', data: JSON.stringify({ code, signal }) });
       cleanup(runId);
     });
 
@@ -109,26 +123,91 @@ function createTerminalService({ onEvent, logger }) {
   function cancel(runId) {
     const child = runs.get(runId);
     if (!child || child.exitCode !== null || child.signalCode !== null) return { ok: false };
-    if (process.platform === 'win32') {
-      // Windows kill() does not terminate child trees; taskkill does.
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-    } else {
-      child.kill('SIGTERM');
-      setTimeout(() => {
-        if (child.exitCode === null) child.kill('SIGKILL');
-      }, 3000).unref();
-    }
+    killTree(child);
     return { ok: true };
+  }
+
+  /**
+   * Run a command to completion and capture its combined output as a single
+   * string, for the AI Agent to feed back to the model. Unlike start(), this
+   * does not stream to the terminal panel and never throws: failures resolve
+   * with a structured { output, code, error } so the agent loop can continue.
+   * The working directory is confined to the workspace via pathGuard.
+   */
+  function runCapture({ root, cwd, command, profile, timeoutMs = 120000, maxBytes = 200000 } = {}) {
+    return new Promise((resolve) => {
+      if (typeof command !== 'string' || !command.trim()) {
+        resolve({ output: '', code: 127, signal: null, error: 'A command is required.' });
+        return;
+      }
+      let runCwd;
+      try {
+        runCwd = cwd ? resolveWithin(root, cwd) : resolveWithin(root, root);
+      } catch (error) {
+        resolve({ output: '', code: 127, signal: null, error: error.message });
+        return;
+      }
+
+      const shell = resolveShell(process.platform, profile);
+      let child;
+      try {
+        child = spawn(shell.file, shell.args(command), {
+          cwd: runCwd,
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        });
+      } catch (error) {
+        logger.error('terminal capture spawn failed', { error: error.message });
+        resolve({ output: '', code: 127, signal: null, error: error.message });
+        return;
+      }
+
+      let output = '';
+      let truncated = false;
+      let timedOut = false;
+      const collect = (chunk) => {
+        if (truncated) return;
+        output += chunk.toString();
+        if (output.length > maxBytes) {
+          output = output.slice(0, maxBytes);
+          truncated = true;
+        }
+      };
+      child.stdout?.on('data', collect);
+      child.stderr?.on('data', collect);
+
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        timedOut = true;
+        killTree(child);
+      }, timeoutMs);
+
+      child.on('error', (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ output, code: 127, signal: null, error: error.message, truncated, timedOut });
+      });
+
+      child.on('close', (code, signal) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (timedOut) {
+          resolve({ output, code: null, signal, error: `Command timed out after ${Math.round(timeoutMs / 1000)}s.`, truncated, timedOut });
+          return;
+        }
+        resolve({ output, code, signal, truncated, timedOut });
+      });
+    });
   }
 
   function dispose() {
     for (const [runId, child] of runs) {
       try {
-        if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-        } else {
-          child.kill('SIGKILL');
-        }
+        killTree(child);
       } catch {
         /* best effort on shutdown */
       }
@@ -136,7 +215,7 @@ function createTerminalService({ onEvent, logger }) {
     }
   }
 
-  return { start, cancel, dispose, profiles, activeCount: () => runs.size };
+  return { start, cancel, runCapture, dispose, profiles, activeCount: () => runs.size };
 }
 
 module.exports = { createTerminalService, pickShell, profilesFor, resolveShell };

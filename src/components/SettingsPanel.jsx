@@ -50,6 +50,7 @@ export default function SettingsPanel({ settings, update, runtimes }) {
   const [oauthProviders, setOauthProviders] = useState([]);
   const [oauthDraft, setOauthDraft] = useState({});
   const [oauthMsg, setOauthMsg] = useState({ state: 'idle', text: '' });
+  const [aiProviders, setAiProviders] = useState([]);
   const [snippetQuery, setSnippetQuery] = useState('');
 
   // Code shortcuts are just snippet prefixes, so the list is generated from the
@@ -66,6 +67,13 @@ export default function SettingsPanel({ settings, update, runtimes }) {
     return [...grouped.entries()];
   }, [snippetQuery]);
 
+  // Inline model picker options follow whichever inline provider is chosen.
+  const inlineProviderObj = useMemo(
+    () => aiProviders.find((p) => p.id === settings.ai.inlineProvider) || null,
+    [aiProviders, settings.ai.inlineProvider],
+  );
+  const inlineModels = inlineProviderObj?.models?.length ? inlineProviderObj.models : [];
+
   // Picking a theme also adopts its accent, which is what makes a switch to
   // "Dragon" or "Flowers" feel complete instead of half-applied.
   function pickTheme(theme) {
@@ -79,6 +87,12 @@ export default function SettingsPanel({ settings, update, runtimes }) {
   useEffect(() => {
     if (!isDesktop) return;
     client.oauthStatus().then(setOauthProviders).catch(() => setOauthProviders([]));
+  }, []);
+
+  // Provider descriptors come from the main-process registry, so the Settings
+  // model pickers can never drift from what the assistant actually supports.
+  useEffect(() => {
+    client.listAiProviders().then((list) => setAiProviders(list || [])).catch(() => setAiProviders([]));
   }, []);
 
   function setDraft(key, value) {
@@ -289,6 +303,23 @@ export default function SettingsPanel({ settings, update, runtimes }) {
             features, and every answer is tuned to be short, idiomatic code — no boilerplate, no invented APIs.
           </p>
           <label>
+            Assistant provider
+            <select
+              value={settings.ai.provider}
+              onChange={(e) => {
+                const p = aiProviders.find((x) => x.id === e.target.value);
+                const ai = { ...settings.ai, provider: e.target.value };
+                if (p) { ai.model = p.defaultModel || ai.model; if (p.baseUrl) ai.baseUrl = p.baseUrl; }
+                update({ ai });
+              }}
+            >
+              {!aiProviders.some((x) => x.id === settings.ai.provider) && (
+                <option value={settings.ai.provider}>{settings.ai.provider}</option>
+              )}
+              {aiProviders.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </label>
+          <label>
             Base URL (OpenAI-compatible)
             <input
               type="text"
@@ -306,6 +337,31 @@ export default function SettingsPanel({ settings, update, runtimes }) {
               spellCheck="false"
             />
           </label>
+          <label>
+            Inline AI provider (optional)
+            <select
+              value={settings.ai.inlineProvider || ''}
+              onChange={(e) => update({ ai: { ...settings.ai, inlineProvider: e.target.value, inlineModel: '' } })}
+            >
+              <option value="">Follow assistant provider</option>
+              {aiProviders.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Inline AI model (optional)
+            <select
+              value={settings.ai.inlineModel || ''}
+              onChange={(e) => update({ ai: { ...settings.ai, inlineModel: e.target.value } })}
+            >
+              <option value="">Follow assistant model</option>
+              {inlineModels.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
+          <p className="muted tiny">
+            Ghost text is latency-critical: point the two inline pickers at a fast model (for example Google Gemini
+            Flash or Groq) to make suggestions feel instant while the assistant keeps a stronger model. Leave both on
+            “Follow” to use one model everywhere.
+          </p>
           <SliderRow
             label="Temperature"
             display={settings.ai.temperature}
@@ -325,7 +381,10 @@ export default function SettingsPanel({ settings, update, runtimes }) {
           </div>
           <p className="muted tiny">
             Any OpenAI-compatible endpoint works here, including local runtimes that expose /v1. Your API key is
-            managed in the AI panel and stored with OS-level encryption.
+            managed in the AI panel and stored with OS-level encryption. With the <strong>NovaCode Gateway</strong>
+            provider there is no per-user key: set the Base URL to your gateway (for example
+            <code className="oauth-cb"> https://ai.example.com/v1</code>) and sign-in users get chat and inline AI out
+            of the box — the keys live on your server.
           </p>
         </section>
 

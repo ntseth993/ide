@@ -14,6 +14,10 @@ const MAX_MESSAGE_CHARS = 24000;
 const VALID_ROLES = new Set(['system', 'user', 'assistant']);
 const CHARS_PER_TOKEN = 4; // rough heuristic for local budget metering
 
+// Free, keyless provider used as a silent safety net when the selected one is
+// unreachable, so a chat message still gets an answer without any setup.
+const FALLBACK_PROVIDER = 'pollinations';
+
 // Inline completions are latency- and cost-critical: bound the output and the
 // wait instead of letting a model ramble.
 const COMPLETION_TIMEOUT_MS = 12000;
@@ -22,6 +26,23 @@ const COMPLETION_MESSAGE_CHARS = 9000;
 
 function estimateTokens(chars) {
   return Math.max(1, Math.ceil(chars / CHARS_PER_TOKEN));
+}
+
+// Free-tier rate limits and transient faults are worth a short, bounded wait
+// and retry so a message still gets an answer instead of erroring out.
+const MAX_RETRY_WAITS = 2;
+const DEFAULT_RETRY_WAIT_MS = 30000;
+const MAX_RETRY_WAIT_MS = 35000;
+
+/** Await `ms`, resolving early if the run is cancelled, so waits stay responsive. */
+function delay(ms, signal) {
+  return new Promise((resolve) => {
+    if (!ms || ms <= 0) resolve();
+    else {
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+    }
+  });
 }
 
 function sanitizeMessages(messages) {
@@ -62,36 +83,45 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
     return { key: null, source: null };
   }
 
-  function start({ provider, messages, model, baseUrl, temperature } = {}) {
+  function start({ provider, messages, model, baseUrl, temperature } = {}, emit = onEvent) {
     return (async () => {
       const runId = `ai-${nextRunId}`;
       nextRunId += 1;
 
       const meta = getProvider(provider);
-      const { module: providerModule } = getModule(meta.id);
 
       // Gate on the signed-in account's local token budget, when auth is wired.
       if (auth) {
         const quota = await auth.hasQuota();
         if (!quota.ok) {
-          onEvent({ runId, type: 'error', data: quota.error });
-          onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'no-quota' }) });
+          emit({ runId, type: 'error', data: quota.error });
+          emit({ runId, type: 'done', data: JSON.stringify({ reason: 'no-quota' }) });
           return { runId };
         }
       }
 
+      // A selected provider without a key (Gemini/Claude/OpenAI) must never
+      // dead-end the chat: fall back to the free, keyless provider so the
+      // message still gets an answer, and say so honestly in the UI.
+      let effectiveMeta = meta;
       let apiKey = null;
       if (meta.requiresKey) {
         const resolved = await resolveApiKey(meta.id);
         apiKey = resolved.key;
         if (!apiKey) {
-          onEvent({
-            runId,
-            type: 'error',
-            data: `No API key configured for ${meta.label}. Add your ${meta.label} key in the assistant settings to start chatting.`,
-          });
-          onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'no-key' }) });
-          return { runId };
+          const fb = getProvider(FALLBACK_PROVIDER);
+          if (meta.id === fb.id) {
+            emit({
+              runId,
+              type: 'error',
+              data: `No API key configured for ${meta.label}. Add your ${meta.label} key in the assistant settings to start chatting.`,
+            });
+            emit({ runId, type: 'done', data: JSON.stringify({ reason: 'no-key' }) });
+            return { runId };
+          }
+          effectiveMeta = fb;
+          apiKey = null;
+          emit({ runId, type: 'status', data: `${meta.label} needs an API key you have not added yet — answering with the free provider instead.` });
         }
       }
 
@@ -99,49 +129,114 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
       try {
         cleanedMessages = sanitizeMessages(messages);
       } catch (error) {
-        onEvent({ runId, type: 'error', data: error.message });
-        onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
+        emit({ runId, type: 'error', data: error.message });
+        emit({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
         return { runId };
       }
 
       const abortController = new AbortController();
       runs.set(runId, abortController);
 
-      const resolvedBaseUrl = baseUrl || meta.baseUrl;
-      const resolvedModel = model || meta.defaultModel;
-      onEvent({ runId, type: 'start', data: JSON.stringify({ provider: meta.id, model: resolvedModel }) });
+      const usedCallerConfig = effectiveMeta.id === meta.id;
+      const resolvedBaseUrl = (usedCallerConfig && baseUrl) || effectiveMeta.baseUrl;
+      const resolvedModel = (usedCallerConfig && model) || effectiveMeta.defaultModel;
+      emit({ runId, type: 'start', data: JSON.stringify({ provider: effectiveMeta.id, model: resolvedModel }) });
 
       const promptChars = cleanedMessages.reduce((sum, m) => sum + m.content.length, 0);
+      // Tracks whether anything reached the UI, so a fallback only restarts a
+      // turn that is still blank (never one that already streamed text).
+      let emittedDelta = false;
 
-      providerModule
-        .streamChat({
-          baseUrl: resolvedBaseUrl,
-          apiKey,
-          model: resolvedModel,
+      async function attempt({ id, url, mdl, key, reasoningEffort }) {
+        const { module: mod } = getModule(id);
+        return mod.streamChat({
+          baseUrl: url,
+          apiKey: key,
+          model: mdl,
           messages: cleanedMessages,
           temperature,
+          reasoningEffort,
           signal: abortController.signal,
-          onDelta: (delta) => onEvent({ runId, type: 'delta', data: delta }),
-        })
-        .then(async (result) => {
-          logger.info('ai run finished', { runId, provider: meta.id, chars: result.text.length });
-          if (auth) {
-            const used = estimateTokens(promptChars + result.text.length);
-            const charged = await auth.consume({ tokens: used });
-            if (charged.account) onEvent({ runId, type: 'account', data: JSON.stringify(charged.account) });
+          onDelta: (delta) => {
+            emittedDelta = true;
+            emit({ runId, type: 'delta', data: delta });
+          },
+        });
+      }
+
+      // Retry a rate-limited / transient failure up to MAX_RETRY_WAITS times,
+      // honoring Retry-After and telling the UI it is waiting. Never retries once
+      // text has started streaming (that would duplicate the answer).
+      async function attemptWithRetry(cfg) {
+        let waits = 0;
+        for (;;) {
+          try {
+            return await attempt(cfg);
+          } catch (error) {
+            const canRetry = error.retryable && !emittedDelta && waits < MAX_RETRY_WAITS
+              && !error.cancelled && !abortController.signal.aborted;
+            if (!canRetry) throw error;
+            waits += 1;
+            const waitMs = Math.min(error.retryAfterMs || DEFAULT_RETRY_WAIT_MS, MAX_RETRY_WAIT_MS);
+            emit({ runId, type: 'status', data: `The AI is busy — waiting ${Math.ceil(waitMs / 1000)}s then retrying (${waits}/${MAX_RETRY_WAITS})…` });
+            await delay(waitMs, abortController.signal);
+            if (abortController.signal.aborted) {
+              const cancelled = new Error('Cancelled');
+              cancelled.cancelled = true;
+              throw cancelled;
+            }
           }
-          onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'completed', finishReason: result.finishReason }) });
-        })
-        .catch((error) => {
+        }
+      }
+
+      async function settle(result, providerId) {
+        logger.info('ai run finished', { runId, provider: providerId, chars: result.text.length });
+        if (auth) {
+          const used = estimateTokens(promptChars + result.text.length);
+          const charged = await auth.consume({ tokens: used });
+          if (charged.account) emit({ runId, type: 'account', data: JSON.stringify(charged.account) });
+        }
+        emit({ runId, type: 'done', data: JSON.stringify({ reason: 'completed', finishReason: result.finishReason }) });
+      }
+
+      (async () => {
+        try {
+          const result = await attemptWithRetry({ id: effectiveMeta.id, url: resolvedBaseUrl, mdl: resolvedModel, key: apiKey, reasoningEffort: effectiveMeta.reasoningEffort });
+          await settle(result, effectiveMeta.id);
+        } catch (error) {
           if (error.cancelled || abortController.signal.aborted) {
-            onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'cancelled' }) });
-          } else {
-            logger.error('ai run failed', { runId, error: error.message });
-            onEvent({ runId, type: 'error', data: error.message });
-            onEvent({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
+            emit({ runId, type: 'done', data: JSON.stringify({ reason: 'cancelled' }) });
+            return;
           }
-        })
-        .finally(() => runs.delete(runId));
+          logger.error('ai run failed', { runId, provider: effectiveMeta.id, error: error.message });
+          // Selected provider is down/unreachable and nothing was shown yet:
+          // silently retry on the free, keyless provider so the message still
+          // gets an answer. Skipped when the primary already IS the fallback.
+          if (effectiveMeta.id !== FALLBACK_PROVIDER && !emittedDelta) {
+            const fb = getProvider(FALLBACK_PROVIDER);
+            try {
+              emit({ runId, type: 'start', data: JSON.stringify({ provider: fb.id, model: fb.defaultModel }) });
+              const result = await attemptWithRetry({ id: fb.id, url: fb.baseUrl, mdl: fb.defaultModel, key: null, reasoningEffort: fb.reasoningEffort });
+              logger.info('ai run recovered via fallback', { runId, from: meta.id, to: fb.id });
+              await settle(result, fb.id);
+              return;
+            } catch (fallbackError) {
+              if (fallbackError.cancelled || abortController.signal.aborted) {
+                emit({ runId, type: 'done', data: JSON.stringify({ reason: 'cancelled' }) });
+                return;
+              }
+              logger.error('ai fallback run failed', { runId, error: fallbackError.message });
+              emit({ runId, type: 'error', data: `${error.message} The free fallback also failed: ${fallbackError.message}` });
+              emit({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
+              return;
+            }
+          }
+          emit({ runId, type: 'error', data: error.message });
+          emit({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
+        } finally {
+          runs.delete(runId);
+        }
+      })();
 
       return { runId };
     })();
@@ -161,7 +256,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
    * means "no suggestion", which the editor renders silently.
    * @returns {Promise<{ text: string, reason?: string, error?: string }>}
    */
-  async function complete({ provider, messages, model, baseUrl, temperature } = {}) {
+  async function complete({ provider, messages, model, baseUrl, temperature } = {}, emit = onEvent) {
     const meta = getProvider(provider);
     const { module: providerModule } = getModule(meta.id);
 
@@ -230,7 +325,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
     if (auth) {
       const used = estimateTokens(cleaned.reduce((sum, m) => sum + m.content.length, 0) + trimmed.length);
       const charged = await auth.consume({ tokens: used });
-      if (charged.account) onEvent({ runId: completionId, type: 'account', data: JSON.stringify(charged.account) });
+      if (charged.account) emit({ runId: completionId, type: 'account', data: JSON.stringify(charged.account) });
     }
     return { text: trimmed, provider: meta.id, model: model || meta.defaultModel };
   }

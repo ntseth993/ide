@@ -12,7 +12,8 @@
  *     feature; the main process enforces the same gate, this just avoids
  *     pointless network calls);
  *   - at most one request in flight per view — stale replies are dropped;
- *   - bounded context (6k chars before / 2k after) keeps latency and cost low.
+ *   - a short debounce so we only ask once typing pauses, not on every key;
+ *   - bounded context (3k chars before / 1k after) keeps latency and cost low.
  */
 import { client } from './novaClient';
 import { buildCompletionMessages, cleanCompletion } from './aiPrompts';
@@ -24,11 +25,37 @@ const SUPPORTED_LANGUAGES = [
 ];
 
 const MIN_CONTEXT_CHARS = 12;
+// How long typing must pause before we spend a request — Monaco re-invokes the
+// provider (and cancels the previous call) on every keystroke, so only the last
+// invocation clears this window and actually hits the network.
+const DEBOUNCE_MS = 180;
+// Bigger prompts mean slower, pricier round-trips; the model rarely needs more
+// than this to complete the current line/block.
+const PREFIX_CHARS = 3000;
+const SUFFIX_CHARS = 1000;
+const MAX_TOKENS = 160;
 
 // A "break point" is anywhere a suggestion reads naturally: after whitespace,
 // punctuation or an operator.
 const BREAK_POINT = /[\s{}()[\];,.:=><+\-*/&|^!?~'"`\\]$/;
 const WORD_TAIL = /[\w$]+$/;
+
+/** Resolve true if the token is cancelled before `ms` elapses, else false. */
+function waitOrCancel(ms, token) {
+  return new Promise((resolve) => {
+    if (token?.isCancellationRequested) { resolve(true); return; }
+    let settled = false;
+    const finish = (canceled) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { listener?.dispose?.(); } catch { /* event already gone */ }
+      resolve(canceled);
+    };
+    const timer = setTimeout(() => finish(false), ms);
+    const listener = token?.onCancellationRequested?.(() => finish(true));
+  });
+}
 
 /**
  * Decide whether a caret position is worth asking the model about. Mid-word
@@ -63,17 +90,30 @@ export function registerInlineAI({ monaco, getConfig, onStatus }) {
         report('off');
         return { items: [] };
       }
+      // Serialize AI usage: never fire an inline completion while a chat turn is
+      // streaming — one request at a time, so the assistant finishes first.
+      if (config.chatBusy) {
+        report('idle');
+        return { items: [] };
+      }
 
       const fullText = model.getValue();
       const offset = model.getOffsetAt(position);
-      const prefix = fullText.slice(Math.max(0, offset - 6000), offset);
-      const suffix = fullText.slice(offset, offset + 2000);
+      const prefix = fullText.slice(Math.max(0, offset - PREFIX_CHARS), offset);
+      const suffix = fullText.slice(offset, offset + SUFFIX_CHARS);
       if (!shouldRequestCompletion(prefix)) {
         report('idle');
         return { items: [] };
       }
 
       const requestId = ++seq;
+      // Wait for a brief pause; if the user keeps typing (Monaco cancels this
+      // call) or a newer position arrives, abandon before spending a request.
+      const canceled = await waitOrCancel(DEBOUNCE_MS, token);
+      if (canceled || token.isCancellationRequested || requestId !== seq) {
+        return { items: [] };
+      }
+
       report('working');
       const languageId = model.getLanguageId?.() || 'plaintext';
       let result;
@@ -91,7 +131,7 @@ export function registerInlineAI({ monaco, getConfig, onStatus }) {
           baseUrl: config.baseUrl,
           // Completions want determinism and speed, not creativity.
           temperature: 0,
-          maxTokens: 220,
+          maxTokens: MAX_TOKENS,
         });
       } catch (error) {
         if (requestId === seq) report('error', error?.message);

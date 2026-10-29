@@ -52,29 +52,16 @@ function StatusChip({ transport }) {
   const supported = transport.supported;
   const bt = transport.kind === 'bluetooth';
   const adapter = transport.adapters?.[0];
+  const adapterLine = bt
+    ? `Adapter ${BT_POWER_LABEL[transport.power] || transport.power || 'unknown'}`
+    : (adapter ? `Adapter ${adapter.state}` : '');
+  const detail = [transport.detail, adapterLine].filter(Boolean).join(' · ');
   return (
-    <div className={`nl-transport${supported ? '' : ' unsupported'}`}>
-      <span className="nl-transport-icon" aria-hidden="true">
-        {bt ? <BluetoothIcon size={15} /> : <NetworkIcon size={15} />}
-      </span>
-      <div className="nl-transport-body">
-        <span className="nl-transport-name">{transport.label}</span>
-        <span className={`nl-transport-state ${supported ? 'ok' : 'off'}`}>
-          {supported ? 'Available' : 'Not supported'}
-        </span>
-        {bt && (
-          <span className="nl-transport-adapter muted tiny">
-            Bluetooth: {BT_POWER_LABEL[transport.power] || transport.power || 'unknown'}
-          </span>
-        )}
-        {!bt && adapter && (
-          <span className="nl-transport-adapter muted tiny">
-            Adapter: {adapter.state}
-          </span>
-        )}
-        {transport.detail && <span className="muted tiny nl-transport-detail">{transport.detail}</span>}
-      </div>
-    </div>
+    <span className={`nl-pill ${supported ? 'ok' : 'off'}`} title={detail}>
+      <span className="nl-pill-icon" aria-hidden="true">{bt ? <BluetoothIcon size={13} /> : <NetworkIcon size={13} />}</span>
+      <span className="nl-pill-name">{transport.label}</span>
+      <span className="nl-pill-state">{supported ? 'Available' : 'Not supported'}</span>
+    </span>
   );
 }
 
@@ -84,7 +71,10 @@ function PeerRow({ peer, active, disabled, onSelect, onDisconnect }) {
       <button type="button" className="nl-peer-main" onClick={() => onSelect(peer.peerId)} disabled={disabled}>
         <span className="nl-peer-avatar" aria-hidden="true">{(peer.name || '?').slice(0, 1).toUpperCase()}</span>
         <span className="nl-peer-meta">
-          <span className="nl-peer-name">{peer.name}</span>
+          <span className="nl-name-row">
+            <span className="nl-dot connected" title="Connected" />
+            <span className="nl-peer-name">{peer.name}</span>
+          </span>
           <span className="nl-peer-fp muted tiny" title="Cryptographic identity — verify out-of-band">
             {shortFp(peer.fp)}
           </span>
@@ -192,7 +182,7 @@ function OutgoingFileCard({ transfer, onCancel }) {
   );
 }
 
-export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorSelection, onNotify }) {
+export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorSelection, onNotify, asTab = false }) {
   const [snap, setSnap] = useState(null);
   const [error, setError] = useState('');
   const [activePeer, setActivePeer] = useState('');
@@ -252,6 +242,7 @@ export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorS
   const btPower = bluetooth?.power || btTransport?.power || 'unknown';
   const btDevices = bluetooth?.devices || [];
   const btEnable = bluetooth?.lastEnable;
+  const btCapability = bluetooth?.capability || btTransport?.capability || null;
   const activePeerObj = peers.find((p) => p.peerId === activePeer) || null;
   const chat = useMemo(() => (activePeer && snap?.chats?.[activePeer]) || [], [activePeer, snap]);
 
@@ -262,7 +253,7 @@ export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorS
 
   if (!isDesktop) {
     return (
-      <div className="novalink-panel" aria-label="NovaLink">
+      <div className={`novalink-panel${asTab ? ' nl-tab' : ''}`} aria-label="NovaLink">
         <PanelHeader />
         <p className="nl-note muted tiny">NovaLink collaboration runs in the desktop app. Launch it with “npm run dev” or the installed build.</p>
       </div>
@@ -270,7 +261,7 @@ export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorS
   }
 
   return (
-    <div className="novalink-panel" aria-label="NovaLink">
+    <div className={`novalink-panel${asTab ? ' nl-tab' : ''}`} aria-label="NovaLink">
       <PanelHeader
         onRefresh={() => run(() => client.novalinkStatus().then(setSnap))}
         busy={busy}
@@ -279,111 +270,124 @@ export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorS
       {snap?.unavailable && <p className="nl-note muted tiny">{toUserMessage('NovaLink is unavailable in this build.')}</p>}
       {error && <div className="nl-error">{error}</div>}
 
-      {/* Identity + transport availability */}
-      <section className="nl-section">
-        <h4 className="nl-h">This device</h4>
+      {/* Identity + transport availability — one compact hero */}
+      <section className="nl-section nl-hero">
         <div className="nl-identity">
-          <span className="nl-identity-name">{snap?.identity?.name || 'NovaCode'}</span>
-          <span className="nl-identity-fp muted tiny" title="Your NovaLink fingerprint. Verify a peer's out-of-band before trusting it.">
-            ID {shortFp(snap?.identity?.fingerprint)}
-          </span>
+          <span className="nl-identity-avatar" aria-hidden="true">{(snap?.identity?.name || 'N').slice(0, 1).toUpperCase()}</span>
+          <div className="nl-identity-text">
+            <span className="nl-identity-name">{snap?.identity?.name || 'NovaCode'}</span>
+            <span className="nl-identity-fp muted tiny" title="Your NovaLink fingerprint. Verify a peer's out-of-band before trusting it.">
+              ID {shortFp(snap?.identity?.fingerprint)}
+            </span>
+          </div>
         </div>
-        <div className="nl-transports">
+        <div className="nl-pills">
           {transports.map((t) => <StatusChip key={t.id} transport={t} />)}
         </div>
       </section>
 
-      {/* Bluetooth — real adapter control + surrounding-device discovery */}
-      <section className="nl-section">
-        <div className="nl-h-row">
-          <h4 className="nl-h">Bluetooth</h4>
+      {/* Bluetooth — real adapter, but app-to-app chat isn't supported over it yet,
+          so it lives in a compact disclosure instead of a full always-open card. */}
+      <details className="nl-details">
+        <summary className="nl-summary">
+          <BluetoothIcon size={14} />
+          <span className="nl-summary-label">Bluetooth</span>
           <span className={`nl-bt-power ${btPower === 'on' ? 'ok' : 'off'}`}>
             {BT_POWER_LABEL[btPower] || btPower}
           </span>
-        </div>
-        <div className="nl-actions">
-          {btPower !== 'on' && (
-            <button
-              type="button"
-              className="small primary"
-              disabled={busy || btPower === 'absent'}
-              onClick={() => run(async () => {
-                const result = await client.novalinkEnableBluetooth();
-                if (result?.ok) {
-                  onNotify?.(result.alreadyOn ? 'Bluetooth is already on.' : 'Bluetooth enabled.', 'ok');
-                  // Radio is on — immediately sweep for surrounding devices.
-                  await client.novalinkScanBluetooth().catch(() => {});
-                } else if (result?.needsUserAction) {
-                  onNotify?.(result.detail, 'warn');
-                } else {
-                  onNotify?.(result?.detail || 'Could not enable Bluetooth.', 'error');
-                }
-                const fresh = await client.novalinkStatus();
-                setSnap(fresh);
-              })}
-            >
-              <BluetoothIcon size={14} /> Enable Bluetooth
-            </button>
-          )}
-          <button
-            type="button"
-            className="small"
-            disabled={busy || btPower === 'absent'}
-            onClick={() => run(() => client.novalinkScanBluetooth())}
-          >
-            <RefreshIcon size={14} /> Scan Surrounding Devices
-          </button>
-        </div>
-        {btPower === 'off' && (
-          <p className="nl-note muted tiny">Bluetooth is switched off on this machine. Enable it above before scanning — NovaCode will not pretend to find devices while the radio is off.</p>
-        )}
-        {btPower === 'absent' && (
-          <p className="nl-note muted tiny">No Bluetooth adapter was found on this device.</p>
-        )}
-        {btEnable && !btEnable.ok && btEnable.needsUserAction && (
-          <p className="nl-note muted tiny">{btEnable.detail}</p>
-        )}
-        {bluetooth?.scannedAt && (
-          <div className="nl-bt-devices">
-            <span className="muted tiny">OS-visible Bluetooth devices · scanned {new Date(bluetooth.scannedAt).toLocaleTimeString()}</span>
-            {btDevices.length === 0 && <p className="nl-note muted tiny">No Bluetooth devices are visible to Windows right now.</p>}
-            {btDevices.map((device, index) => (
-              <div key={`${device.name}-${index}`} className="nl-nearby">
-                <div className="nl-nearby-meta">
-                  <span className="nl-nearby-name">{device.name}</span>
-                  <span className="muted tiny">{device.isAdapter ? 'This PC\'s adapter' : `status: ${device.status}`}</span>
-                </div>
-                {!device.isAdapter && <span className="nl-bt-badge">not NovaLink</span>}
-              </div>
-            ))}
-            <p className="nl-note muted tiny">
-              These are all Bluetooth devices Windows can see — phones, headphones, PCs. NovaLink cannot yet chat or
-              share over Bluetooth itself (app-to-app Bluetooth data needs a native module), so use
-              <strong> Discover Nearby Devices</strong> below for connectable NovaCode developers over the local network.
+        </summary>
+        <div className="nl-details-body">
+          <div className="nl-bt-detect">
+            <div className="nl-bt-flags">
+              <span className={`nl-bt-flag ${btCapability ? (btCapability.adapterPresent ? 'ok' : 'off') : ''}`}>
+                {btCapability ? (btCapability.adapterPresent ? 'Adapter found' : 'No adapter') : 'Checking…'}
+              </span>
+              <span className={`nl-bt-flag ${btPower === 'on' ? 'ok' : 'off'}`}>{btPower === 'on' ? 'Bluetooth on' : 'Bluetooth off'}</span>
+              <span className={`nl-bt-flag ${btCapability?.serviceRunning ? 'ok' : 'off'}`}>{btCapability?.serviceRunning ? 'Service running' : 'Service stopped'}</span>
+              <span className={`nl-bt-flag ${btCapability?.canScan ? 'ok' : 'off'}`}>{btCapability?.canScan ? 'Can scan' : 'Cannot scan'}</span>
+            </div>
+            <p className="nl-note tiny">
+              {btCapability?.dataSupported
+                ? 'Bluetooth data transfer is available — connect a peer below to chat and share.'
+                : 'NovaLink detects and scans Bluetooth, but streaming messages/files over the raw radio needs a native module. To collaborate now: pair the two PCs over a Bluetooth network (PAN), or use the Wi‑Fi / Ethernet Local network transport and Discover below.'}
             </p>
           </div>
-        )}
-      </section>
+          <div className="nl-actions">
+            {btPower !== 'on' && (
+              <button
+                type="button"
+                className="small primary"
+                disabled={busy || btPower === 'absent'}
+                onClick={() => run(async () => {
+                  const result = await client.novalinkEnableBluetooth();
+                  if (result?.ok) {
+                    onNotify?.(result.alreadyOn ? 'Bluetooth is already on.' : 'Bluetooth enabled.', 'ok');
+                    await client.novalinkScanBluetooth().catch(() => {});
+                  } else if (result?.needsUserAction) {
+                    onNotify?.(result.detail, 'warn');
+                  } else {
+                    onNotify?.(result?.detail || 'Could not enable Bluetooth.', 'error');
+                  }
+                  const fresh = await client.novalinkStatus();
+                  setSnap(fresh);
+                })}
+              >
+                Enable
+              </button>
+            )}
+            <button
+              type="button"
+              className="small"
+              disabled={busy || btPower === 'absent'}
+              onClick={() => run(() => client.novalinkScanBluetooth())}
+            >
+              <RefreshIcon size={14} /> Scan
+            </button>
+          </div>
+          {btPower === 'off' && <p className="nl-note tiny">Bluetooth is switched off on this machine.</p>}
+          {btPower === 'absent' && <p className="nl-note tiny">No Bluetooth adapter was found on this device.</p>}
+          {btEnable && !btEnable.ok && btEnable.needsUserAction && <p className="nl-note tiny">{btEnable.detail}</p>}
+          {bluetooth?.scannedAt && (
+            <div className="nl-bt-devices">
+              <span className="muted tiny">Visible to Windows · {new Date(bluetooth.scannedAt).toLocaleTimeString()}</span>
+              {btDevices.length === 0 && <p className="nl-note tiny">No Bluetooth devices are visible right now.</p>}
+              {btDevices.map((device, index) => (
+                <div key={`${device.name}-${index}`} className="nl-nearby">
+                  <div className="nl-nearby-meta">
+                    <span className="nl-nearby-name">{device.name}</span>
+                    <span className="muted tiny">{device.isAdapter ? 'This PC\'s adapter' : (device.connected ? 'connected' : `status: ${device.status}`)}</span>
+                  </div>
+                  {!device.isAdapter && <span className="nl-bt-badge">not NovaLink</span>}
+                </div>
+              ))}
+              <p className="nl-note tiny">NovaLink chats over the <strong>local network</strong>, not Bluetooth yet — use Discover to connect.</p>
+            </div>
+          )}
+        </div>
+      </details>
 
       {/* Discovery */}
       <section className="nl-section">
         <div className="nl-h-row">
-          <h4 className="nl-h">Nearby NovaCode developers</h4>
+          <h4 className="nl-h">Nearby developers</h4>
           {snap?.scanning && <span className="nl-scanning muted tiny">Scanning…</span>}
         </div>
         <div className="nl-actions">
           <button type="button" className="small primary" disabled={busy} onClick={() => run(() => client.novalinkDiscover())}>
-            Discover Nearby Devices
+            <RefreshIcon size={14} /> Discover
           </button>
           {snap?.scanning && (
             <button type="button" className="small" disabled={busy} onClick={() => run(() => client.novalinkStopDiscovery())}>Stop</button>
           )}
         </div>
-        {nearby.length === 0 && <p className="nl-note muted tiny">No other NovaCode developers in range yet.</p>}
+        {nearby.length === 0 && <p className="nl-note muted tiny">No one in range yet. Hit Discover to look for nearby developers.</p>}
         {nearby.map((peer) => (
           <div key={peer.peerId} className="nl-nearby">
             <div className="nl-nearby-meta">
-              <span className="nl-nearby-name">{peer.name}</span>
+              <span className="nl-name-row">
+                <span className="nl-dot available" title="Available" />
+                <span className="nl-nearby-name">{peer.name}</span>
+              </span>
               <span className="muted tiny">{peer.kind === 'lan' ? 'Local network' : peer.kind} · {shortFp(peer.fp)}</span>
             </div>
             <button type="button" className="small" disabled={busy} onClick={() => run(() => client.novalinkConnect(peer.peerId), `Connecting to ${peer.name}…`)}>
@@ -412,7 +416,10 @@ export default function NovaLinkView({ workspaceRoot, activeFilePath, getEditorS
           {outgoing.map((req) => (
             <div key={req.peerId} className="nl-request outgoing">
               <div className="nl-request-meta">
-                <span className="nl-request-name">{req.name}</span>
+                <span className="nl-name-row">
+                  <span className="nl-dot connecting" title="Connecting" />
+                  <span className="nl-request-name">{req.name}</span>
+                </span>
                 <span className="muted tiny">waiting for them to accept…</span>
               </div>
               <button type="button" className="small" disabled={busy} onClick={() => run(() => client.novalinkDisconnect(req.peerId))}>Cancel</button>
