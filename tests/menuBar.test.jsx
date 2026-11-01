@@ -32,6 +32,18 @@ describe('menuStructure', () => {
     expect(MENU_BAR_COMMANDS.filter((id) => id === 'view.search').length).toBeGreaterThan(1);
   });
 
+  it('lists Deploy as a live View entry, not a placeholder', () => {
+    // A Deploy item that only opened a mock would be worse than no item at all, so
+    // the menu entry is pinned to the command the deploy workspace actually registers.
+    const view = MENUS.find((menu) => menu.label === 'View');
+    const deploy = view.items.find((item) => item.command === 'view.deploy');
+    expect(deploy).toBeDefined();
+    expect(deploy.label).toBe('Deploy');
+    expect(deploy.disabled).toBeUndefined();
+    expect(deploy.hint).toBe('Ctrl+Shift+B');
+    expect(MENU_BAR_COMMANDS).toContain('view.deploy');
+  });
+
   it('never mixes a command with the disabled placeholder', () => {
     for (const menu of MENUS) {
       for (const item of menu.items) {

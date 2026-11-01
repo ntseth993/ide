@@ -1,0 +1,57 @@
+# NovaLink Live server — Render.com blueprint.
+#
+# Usage:
+#   1. Push this repo (or a fork) to GitHub.
+#   2. On render.com, click "New +" -> "Blueprint" and point at the repo.
+#   3. Before the first deploy, edit this file's `sync: false` secrets and
+#      provide them via the Render dashboard.
+#   4. After deploy, Render hands you a URL like https://novacode-link.onrender.com.
+#      Set NOVALINK_LIVE_URL to that URL when you build the desktop.
+#
+# Render terminates TLS at the edge; the container receives plaintext over the
+# private network, which is why LINK_TRUST_PROXY is safe here.
+
+services:
+  - type: web
+    name: novacode-link-server
+    runtime: image
+    image:
+      # Relative to the repo root; render builds the Dockerfile at deploy.
+      dockerfilePath: link-server/Dockerfile
+      context: link-server
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    numInstances: 1
+    disk:
+      name: link-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LINK_HOST
+        value: 0.0.0.0
+      - key: LINK_PORT
+        # Render injects PORT; the container picks it up below.
+        value: 8790
+      - key: LINK_DATA_DIR
+        value: /data
+      - key: LINK_TRUST_PROXY
+        value: "1"
+      - key: LINK_ALLOW_PLAINTEXT
+        value: "0"
+      - key: LINK_REGISTRATION_OPEN
+        value: "1"
+      - key: LINK_PASSWORD_MIN_LENGTH
+        value: "12"
+      - key: LINK_SERVER_SECRET
+        sync: false        # set in the dashboard: openssl rand -hex 32
+      - key: LINK_INVITE_CODE
+        sync: false        # optional: gate registration behind an invite
+      - key: LINK_TURN_URL
+        sync: false        # optional: WebRTC voice/video behind NAT
+      - key: LINK_TURN_USERNAME
+        sync: false
+      - key: LINK_TURN_CREDENTIAL
+        sync: false

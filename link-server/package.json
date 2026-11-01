@@ -1,0 +1,15 @@
+{
+  "name": "novacode-link-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NovaLink Live backend: accounts, presence, private messaging, file transfer and WebRTC signalling. Zero runtime dependencies (Node 22+ built-ins only).",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}

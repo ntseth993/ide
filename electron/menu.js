@@ -97,6 +97,7 @@ function buildMenuTemplate({ send, showAbout, showDocs, onOpenFile, onNewWindow 
         { label: 'Explorer', accelerator: 'CmdOrCtrl+Shift+E', click: () => send('view.explorer') },
         { label: 'Search', click: () => send('view.search') },
         { label: 'Extensions', accelerator: 'CmdOrCtrl+Shift+X', click: () => send('view.extensions') },
+        { label: 'Deploy', accelerator: 'CmdOrCtrl+Shift+B', click: () => send('view.deploy') },
         { label: 'Source Control (coming soon)', enabled: false },
         { label: 'Run and Debug (coming soon)', enabled: false },
         { type: 'separator' },
@@ -154,7 +155,7 @@ function buildMenuTemplate({ send, showAbout, showDocs, onOpenFile, onNewWindow 
 const MENU_COMMANDS = [
   'new-file', 'new-folder', 'open-folder', 'save', 'save-as', 'save-all', 'close-editor',
   'editor.find', 'editor.replace', 'editor.expand-selection', 'editor.cursor-below', 'editor.cursor-above',
-  'view.explorer', 'view.search', 'view.extensions', 'view.terminal', 'view.problems', 'view.output', 'view.debug', 'view.ai', 'view.history', 'view.settings',
+  'view.explorer', 'view.search', 'view.extensions', 'view.terminal', 'view.problems', 'view.output', 'view.debug', 'view.ai', 'view.history', 'view.settings', 'view.deploy',
   'open-palette', 'editor.goto-line', 'editor.goto-definition',
   'run.file', 'run.stop', 'terminal.new', 'terminal.clear', 'help.shortcuts',
 ];

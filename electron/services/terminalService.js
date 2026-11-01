@@ -39,6 +39,33 @@ function resolveShell(platform, profileId) {
   return list.find((p) => p.id === profileId) || list.find((p) => p.default) || list[0];
 }
 
+/**
+ * Hosting credentials that must not reach a script the developer did not type.
+ *
+ * NovaCode keeps provider tokens in the OS key store, but a token can still end up
+ * in the main process environment — exported by the shell that launched the IDE, or
+ * loaded from the gitignored `.env` — and `runCapture` is exactly where untrusted
+ * project code executes (`npm run build` during a deploy, and whatever the AI Agent
+ * asks to run). A build script must not be able to read the credential that publishes
+ * it. Only these named variables are removed; everything else is left alone, because
+ * people legitimately run their own tooling from here.
+ *
+ * The interactive terminal (`start`) is deliberately NOT sanitized: that shell is the
+ * user typing their own command, and they can already read their own environment.
+ */
+const CHILD_ENV_DENYLIST = [
+  'VERCEL_TOKEN', 'VERCEL_API_TOKEN',
+  'NETLIFY_TOKEN', 'NETLIFY_AUTH_TOKEN',
+  'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_API_KEY', 'CF_API_TOKEN',
+  'RENDER_API_KEY', 'RAILWAY_API_TOKEN',
+];
+
+function childEnv(base = process.env) {
+  const env = { ...base };
+  for (const name of CHILD_ENV_DENYLIST) delete env[name];
+  return env;
+}
+
 // Back-compat helper: the platform default shell.
 function pickShell(platform = process.platform) {
   const profile = resolveShell(platform, null);
@@ -153,7 +180,7 @@ function createTerminalService({ onEvent, logger }) {
       try {
         child = spawn(shell.file, shell.args(command), {
           cwd: runCwd,
-          env: process.env,
+          env: childEnv(),
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
         });
@@ -218,4 +245,4 @@ function createTerminalService({ onEvent, logger }) {
   return { start, cancel, runCapture, dispose, profiles, activeCount: () => runs.size };
 }
 
-module.exports = { createTerminalService, pickShell, profilesFor, resolveShell };
+module.exports = { createTerminalService, pickShell, profilesFor, resolveShell, childEnv, CHILD_ENV_DENYLIST };

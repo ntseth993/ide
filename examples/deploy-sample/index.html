@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NovaCode deploy sample</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!--
+    Smallest possible project that is still a real website: no build step, no
+    dependencies, so a deployment proves the upload, the provider's own status
+    reporting and the public URL without anything else in the way.
+    Deploy it from the IDE with View ▸ Deploy, or:
+      node scripts/verify-real-deploy.js --provider=vercel --root=examples/deploy-sample
+  -->
+  <main class="card">
+    <p class="badge">deployed from NovaCode IDE</p>
+    <h1>It is really on the internet.</h1>
+    <p>
+      If you can read this page at a <code>*.vercel.app</code> or
+      <code>*.netlify.app</code> address, NovaCode collected these two files,
+      uploaded them to the hosting provider, waited for the provider to report the
+      deployment live, and showed you the URL the provider returned.
+    </p>
+    <p class="meta">Static HTML · no build command · no dependencies · nothing secret.</p>
+  </main>
+</body>
+</html>

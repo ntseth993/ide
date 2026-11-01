@@ -3,6 +3,10 @@
  * unreachable provider on the free, keyless one so a message still gets an
  * answer — and the guard that avoids a double-fallback when the free provider
  * itself is the one that fails.
+ *
+ * Also covers the one-shot `complete()` budget: ghost text must stay cheap and
+ * fast, while a caller that is not typing mid-keystroke (a deploy diagnosis) may
+ * widen both — without changing what the editor's completion path costs.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createAiService } from '../electron/services/aiService';
@@ -137,5 +141,99 @@ describe('aiService fallback', () => {
     expect(text).toBe('Hi');
     expect(events.some((e) => e.type === 'status')).toBe(true); // told the UI it was waiting
     expect(calls).toBe(2); // first attempt rate-limited, retry succeeded
+  });
+});
+
+/**
+ * An SSE body that produces `count` deltas and then hangs: the stream only ends
+ * when the caller aborts it, which is what a budget is for. Like a real fetch, an
+ * aborted caller stops receiving — the point of these tests is that the answer is
+ * cut short, not merely that the request eventually finishes.
+ */
+function endlessResponse(delta, count, signal) {
+  const encoder = new TextEncoder();
+  const parts = Array.from({ length: count }, () => `data: {"choices":[{"delta":{"content":"${delta}"}}]}\n\n`);
+  let index = 0;
+  const halted = () => Promise.reject(new Error('stream halted'));
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader() {
+        return {
+          read() {
+            if (signal?.aborted) return halted();
+            if (index < parts.length) {
+              const value = encoder.encode(parts[index]);
+              index += 1;
+              return Promise.resolve({ done: false, value });
+            }
+            return new Promise((_, reject) => {
+              const halt = () => reject(new Error('stream halted'));
+              if (!signal) return;
+              if (signal.aborted) halt();
+              else signal.addEventListener('abort', halt, { once: true });
+            });
+          },
+        };
+      },
+    },
+  };
+}
+
+describe('aiService complete budget', () => {
+  let originalFetch;
+  beforeEach(() => { originalFetch = global.fetch; });
+  afterEach(() => { global.fetch = originalFetch; });
+
+  const messages = [{ role: 'user', content: 'explain the failure' }];
+
+  it('caps a one-shot answer at the ghost-text budget when nothing wider is asked for', async () => {
+    global.fetch = async (url, init) => endlessResponse('0123456789'.repeat(5), 400, init.signal);
+    const service = createAiService({ onEvent: () => {}, secretStore, logger });
+
+    const result = await service.complete({ provider: 'pollinations', messages });
+    expect(result.text.length).toBeGreaterThanOrEqual(1200);
+    // A whole ten-thousand-character answer would mean the budget was ignored.
+    expect(result.text.length).toBeLessThan(1500);
+  });
+
+  it('honours a wider answer budget for a caller that needs the whole paragraph', async () => {
+    global.fetch = async (url, init) => endlessResponse('0123456789'.repeat(5), 400, init.signal);
+    const service = createAiService({ onEvent: () => {}, secretStore, logger });
+
+    const result = await service.complete({ provider: 'pollinations', messages, maxChars: 2000 });
+    expect(result.text.length).toBeGreaterThanOrEqual(2000);
+    expect(result.text.length).toBeLessThan(2300);
+    expect(result.provider).toBe('pollinations');
+    expect(result.model).toBeTruthy();
+  });
+
+  it('applies the caller\'s timeout instead of the inline one', async () => {
+    let started = 0;
+    global.fetch = async (url, init) => {
+      started += 1;
+      // Never delivers a single byte: only the caller's deadline can end this.
+      return endlessResponse('', 0, init.signal);
+    };
+    const service = createAiService({ onEvent: () => {}, secretStore, logger });
+
+    const began = Date.now();
+    const result = await service.complete({ provider: 'pollinations', messages, timeoutMs: 50 });
+    const waited = Date.now() - began;
+
+    expect(started).toBe(1);
+    expect(waited).toBeLessThan(5000); // not the ghost-text default, and not forever
+    expect(result.text).toBe('');
+    expect(result.reason).toBeTruthy(); // says why there is no answer
+  });
+
+  it('reports that a key is needed rather than throwing at the caller', async () => {
+    global.fetch = async () => { throw new Error('should not be reached'); };
+    const service = createAiService({ onEvent: () => {}, secretStore, logger });
+
+    const result = await service.complete({ provider: 'openai', messages });
+    expect(result.text).toBe('');
+    expect(result.reason).toBeTruthy();
   });
 });

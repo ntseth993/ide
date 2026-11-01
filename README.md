@@ -19,11 +19,13 @@ NovaCode is a professional, AI-powered, cross-platform **desktop** IDE built wit
 - Settings: dark / light / high-contrast themes, accent color, font size, tab size, word wrap, minimap, autosave, AI provider (base URL, model, temperature)
 - Status bar with cursor position, language, and AI connection state
 - Resizable panels (sidebar width, terminal height, AI panel width)
-- 47 automated tests (Vitest + React Testing Library), ESLint, production build
+- Explain a failed deployment: the Deploy panel turns the run, its own log tail and the host's build log into redacted evidence and asks the assistant you already configured. With no assistant available it answers from built-in failure causes and says which route it used
+- 727 automated tests (Vitest + React Testing Library), ESLint, production build
 
 ### Partially implemented
 - Terminal: single stream with history (multi-tab terminals planned)
 - AI chat: single-conversation thread per session (persisted threads and project-agent actions planned)
+- Website deployment: publish to **Vercel** and **Netlify** through their real REST APIs (no Git required), with framework detection, environment variables, history, cancellation and custom-domain checks. Cloudflare Pages, Render and Railway are listed but refuse to be selected until their adapters exist. Rejections were verified against the live APIs (a bad token is reported as a failed connection, never as connected); no successful publish has been run end to end from this build yet, so the happy path is covered by tests against a simulated provider
 
 ### Planned (see ROADMAP.md)
 - Git integration, language services/diagnostics, project understanding map, visual API studio, database explorer, plugin architecture, macOS/Linux signed builds, official website
@@ -49,6 +51,15 @@ The Vite dev server starts on `http://localhost:5173` and the Electron window op
 4. For development you can instead set the environment variable `NOVACODE_OPENAI_API_KEY` (documented, never committed).
 
 > Running project code in the terminal executes it **on your machine with your permissions**. Only run code you trust.
+
+### Deploying a website
+1. Open the folder you want to publish, then press **Ctrl+Shift+B** (or the Deploy icon in the sidebar / **View → Deploy**).
+2. Choose a host and connect **your own** account: create an access token on the provider (Vercel: *Account Settings → Tokens*; Netlify: *User settings → Applications*), paste it into the panel and press **Connect**. It is encrypted with your OS credential store, and the interface never reads it back.
+3. Review the detected framework, the build command and the output folder. NovaCode suggests them and never overwrites your files; the build command runs only after you approve it.
+4. Add any environment variables the project needs. Values go to the host, never into a log, and are not readable from the editor.
+5. **Deploy**. The public URL appears only when the provider reports the deployment live. If it fails, press **Explain this failure** — NovaCode reads the host's build log, strips anything secret from it, and tells you what to change.
+
+A sample project to try it on lives in [`examples/deploy-sample`](examples/deploy-sample): open that folder and deploy it as a static site.
 
 ## Production build & installer
 

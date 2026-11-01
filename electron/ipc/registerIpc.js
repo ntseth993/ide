@@ -16,11 +16,41 @@ const { describeProviders } = require('../services/ai/providers');
 const { providerList, OAUTH_PROVIDERS } = require('../services/oauthProviders');
 
 const EXTERNAL_URL = /^https?:\/\//i;
+const DEPLOY_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 
 function normalizeProvider(payload, fallbackKey) {
   if (typeof payload === 'string') return { provider: 'openai', value: payload };
   const source = payload || {};
   return { provider: typeof source.provider === 'string' && source.provider ? source.provider : 'openai', value: source[fallbackKey] };
+}
+
+// --- deploy argument validation ---------------------------------------------
+// The renderer cannot reach the provider adapters directly; every value that
+// crosses these channels is re-typed here first, so a stray object/array/number
+// can never be forwarded into a path, a URL or an API body.
+function clip(value, max = 200) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+
+function isTrue(value) {
+  return value === true;
+}
+
+// Environment variable names are case-sensitive on the Linux runtimes the
+// hosts use, so the name is forwarded exactly as typed: silently uppercasing
+// `connectionString` would create a variable the application never reads and
+// still report a successful deploy.
+const ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/** Environment values cross once and are forgotten; keys must look like names. */
+function envVarList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 50)
+    .map((item) => ({
+      key: clip(item && item.key, 64),
+      value: typeof (item && item.value) === 'string' ? item.value.slice(0, 8000) : '',
+    }))
+    .filter((item) => ENV_KEY.test(item.key) && item.value);
 }
 
 function registerIpc({
@@ -44,6 +74,8 @@ function registerIpc({
   novadb,
   novadbConnector,
   deploy,
+  hosting,
+  diagnosis,
   preview,
   terminal,
   // Optional: without it the theme still works in content, just not in chrome.
@@ -370,8 +402,8 @@ function registerIpc({
   // --- Deploy (build / preview / export the user's own project) --------------
   // All operations are confined to the opened workspace via pathGuard inside
   // the deploy + preview services. Building shells out through the terminal
-  // service; the preview server is loopback-only. Nothing here touches the
-  // network on its own and no hosting credentials are stored.
+  // service; the preview server is loopback-only. These three channels never
+  // touch the network — publishing lives in the hosting block below.
   if (deploy) {
     handle('deploy:detect', (_event, root) => {
       if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
@@ -387,6 +419,129 @@ function registerIpc({
     });
   }
 
+  // --- hosting providers (real deploys through the adapter registry) --------
+  // The only place provider network calls can originate from: the renderer gets
+  // named, argument-checked channels, the controller reads the access token from
+  // the encrypted store inside this process, and no token ever travels back.
+  if (hosting) {
+    const requireRoot = (value) => {
+      const root = clip(value, 1000);
+      if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+      return root;
+    };
+    const requireProvider = (value) => {
+      const provider = clip(value, 32);
+      if (!provider) throw new Error('Choose a hosting provider first.');
+      return provider;
+    };
+    const optionalId = (value) => {
+      if (value === undefined || value === null) return undefined;
+      const raw = typeof value === 'string' ? value.trim() : '';
+      if (!raw) return undefined;
+      // Deliberately not clipped: a truncated team or project id would silently
+      // retarget the deployment at a different (or nonexistent) account, and
+      // §3 requires the deploy to belong to the account the user picked.
+      if (!DEPLOY_ID.test(raw)) throw new Error('That value is not a valid identifier.');
+      return raw;
+    };
+    const requireRun = (value) => {
+      const runId = optionalId(value);
+      if (!runId) throw new Error('A deployment run id is required.');
+      return runId;
+    };
+
+    handle('deploy:providers', () => hosting.providers());
+    handle('deploy:connections', () => hosting.connections());
+
+    // Connecting verifies against the provider BEFORE storing, so a typo or a
+    // revoked token can never leave the UI claiming an account is connected.
+    handle('deploy:connect', (_event, { provider, token } = {}) => hosting.connect({
+      provider: requireProvider(provider),
+      token: clip(token, 400),
+    }));
+
+    handle('deploy:disconnect', (_event, { provider } = {}) => hosting.disconnect({ provider: requireProvider(provider) }));
+    handle('deploy:teams', (_event, { provider } = {}) => hosting.teams({ provider: requireProvider(provider) }));
+    handle('deploy:projects', (_event, { provider, teamId } = {}) => hosting.listProjects({
+      provider: requireProvider(provider),
+      teamId: optionalId(teamId),
+    }));
+    handle('deploy:deploys', (_event, { provider, teamId, project } = {}) => hosting.listDeploys({
+      provider: requireProvider(provider),
+      teamId: optionalId(teamId),
+      project: optionalId(project),
+    }));
+    handle('deploy:domains', (_event, { provider, teamId, project } = {}) => hosting.domains({
+      provider: requireProvider(provider),
+      teamId: optionalId(teamId),
+      project: optionalId(project),
+    }));
+    handle('deploy:providerLogs', (_event, { provider, teamId, deploymentId, project } = {}) => hosting.deployLogs({
+      provider: requireProvider(provider),
+      teamId: optionalId(teamId),
+      deploymentId: optionalId(deploymentId),
+      project: optionalId(project),
+    }));
+
+    handle('deploy:plan', (_event, { root, provider, teamId, project, rebuild } = {}) => hosting.plan({
+      root: requireRoot(root),
+      provider: requireProvider(provider),
+      teamId: optionalId(teamId),
+      project: optionalId(project),
+      rebuild: isTrue(rebuild),
+    }));
+
+    // Start a deployment. The confirmation flags are explicit: a production
+    // publish, running the project's own build script, and knowingly shipping
+    // only the frontend all have to be approved by name.
+    const deployStartArgs = (payload = {}) => ({
+      root: requireRoot(payload.root),
+      provider: requireProvider(payload.provider),
+      teamId: optionalId(payload.teamId),
+      project: optionalId(payload.project),
+      buildCommand: clip(payload.buildCommand, 300) || undefined,
+      outputDir: clip(payload.outputDir, 200) || undefined,
+      production: payload.production === false ? false : true,
+      rebuild: isTrue(payload.rebuild),
+      confirmProduction: isTrue(payload.confirmProduction),
+      confirmBuild: isTrue(payload.confirmBuild),
+      acknowledgeFrontendOnly: isTrue(payload.acknowledgeFrontendOnly),
+      envVars: envVarList(payload.envVars),
+    });
+
+    handle('deploy:start', (event, payload) => hosting.start(deployStartArgs(payload), emitTo(event.sender.id, 'deploy:event')));
+
+    handle('deploy:redeploy', (event, payload) => hosting.redeploy({
+      ...deployStartArgs(payload),
+    }, emitTo(event.sender.id, 'deploy:event')));
+
+    handle('deploy:status', (_event, { runId } = {}) => hosting.status({ runId: requireRun(runId) }));
+    // The panel re-attaches to a deploy that is still running in this process
+    // after the renderer reloads, instead of losing sight of it.
+    handle('deploy:runs', () => hosting.listRuns());
+    handle('deploy:refresh', (_event, { runId } = {}) => hosting.refresh({ runId: requireRun(runId) }));
+    handle('deploy:cancel', (_event, { runId } = {}) => hosting.cancel({ runId: requireRun(runId) }));
+    handle('deploy:runLogs', (_event, { runId } = {}) => hosting.runLogs({ runId: requireRun(runId) }));
+
+    // Explaining a failed deployment is opt-in per click: the diagnostics module
+    // builds redacted evidence and asks the assistant the developer configured.
+    // Without it the panel still shows the run log, just no written diagnosis.
+    if (diagnosis) {
+      handle('deploy:diagnose', (_event, { runId } = {}) => diagnosis.diagnose({ runId: requireRun(runId) }));
+    }
+
+    handle('deploy:history', (_event, { root } = {}) => hosting.historyList({ root: clip(root, 1000) }));
+    handle('deploy:historyClear', (_event, { root, confirm } = {}) => hosting.historyClear({
+      root: clip(root, 1000),
+      confirm: isTrue(confirm),
+    }));
+    handle('deploy:preferences', () => hosting.getPreferences());
+    handle('deploy:setPreferences', (_event, { provider, teamId } = {}) => hosting.setPreferences({
+      provider: clip(provider, 32),
+      teamId: optionalId(teamId),
+    }));
+  }
+
   if (preview) {
     handle('deploy:previewStatus', () => preview.status());
     handle('deploy:previewStart', (_event, { root, dir } = {}) => {
@@ -396,46 +551,264 @@ function registerIpc({
     handle('deploy:previewStop', () => preview.stop());
   }
 
-  // --- NovaLink peer-to-peer collaboration -----------------------------------
-  // Every id-shaped argument is validated as a non-empty string before it
-  // reaches the service; the service then confines all filesystem work to the
-  // workspace via pathGuard. No raw Node/fs or IPC objects ever reach React.
+  // --- NovaLink Live (internet-connected team collaboration) ---------------
+  //
+  // One named channel per Live method. Every argument is re-typed here before
+  // it reaches the main-process client: ids must be UUIDs, strings are
+  // length-clipped, bytes are Uint8Array with a hard ceiling, and only the
+  // named keys a method actually reads cross the wire. The client re-validates
+  // and the server validates again, but a hostile or buggy renderer should
+  // never get to make the client issue a request it was not designed to make.
   if (novalink) {
-    const requireId = (value, label) => {
-      if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} is required.`);
-      return value.trim();
+    const LIVE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const liveId = (value, label) => {
+      const trimmed = typeof value === 'string' ? value.trim() : '';
+      if (!LIVE_ID.test(trimmed)) throw new Error(`${label} must be a uuid.`);
+      return trimmed;
+    };
+    const liveOptId = (value, label) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      return liveId(value, label);
+    };
+    const liveStr = (value, max, label, { required = false } = {}) => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (required && !text) throw new Error(`${label} is required.`);
+      return text.slice(0, max);
+    };
+    const liveBool = (value) => (typeof value === 'boolean' ? value : undefined);
+    const liveInt = (value, { min, max }) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      const n = Number(value);
+      if (!Number.isFinite(n)) return undefined;
+      const i = Math.floor(n);
+      if (i < min) return min;
+      if (i > max) return max;
+      return i;
+    };
+    // Renderer sends Uint8Array (Electron structured-clone); we hand the client
+    // a Buffer. Anything else — a plain array, an object, a string — is refused
+    // before we allocate.
+    const liveBytes = (value, max) => {
+      if (!value) throw new Error('File bytes are required.');
+      if (typeof value !== 'object') throw new Error('File bytes must be a Uint8Array.');
+      const buf = Buffer.isBuffer(value)
+        ? value
+        : ArrayBuffer.isView(value)
+          ? Buffer.from(value.buffer, value.byteOffset, value.byteLength)
+          : null;
+      if (!buf) throw new Error('File bytes must be a Uint8Array.');
+      if (buf.length === 0) throw new Error('File is empty.');
+      if (buf.length > max) throw new Error(`File exceeds the ${Math.round(max / 1024 / 1024)} MB limit.`);
+      return buf;
+    };
+    const liveIdList = (value, label, max) => {
+      if (!Array.isArray(value)) return undefined;
+      return value.slice(0, max).map((id) => liveId(id, label));
     };
 
-    handle('novalink:status', () => novalink.getStatus());
-    handle('novalink:discover', () => novalink.discover());
-    handle('novalink:stop-discovery', () => novalink.stopScan());
-    handle('novalink:enable-bluetooth', () => novalink.enableBluetooth());
-    handle('novalink:scan-bluetooth', () => novalink.scanBluetoothDevices());
-    handle('novalink:connect', (_event, { peerId } = {}) => novalink.connect(requireId(peerId, 'A peer id')));
-    handle('novalink:accept-connection', (_event, { peerId } = {}) => novalink.acceptConnection(requireId(peerId, 'A peer id')));
-    handle('novalink:reject-connection', (_event, { peerId } = {}) => novalink.rejectConnection(requireId(peerId, 'A peer id')));
-    handle('novalink:disconnect', (_event, { peerId } = {}) => novalink.disconnect(requireId(peerId, 'A peer id')));
-    handle('novalink:send-message', (_event, { peerId, text } = {}) => novalink.sendMessage(requireId(peerId, 'A peer id'), typeof text === 'string' ? text : ''));
-    handle('novalink:share-code', (_event, payload = {}) => novalink.shareCode({
-      peerId: requireId(payload.peerId, 'A peer id'),
-      text: typeof payload.text === 'string' ? payload.text : '',
-      language: typeof payload.language === 'string' ? payload.language : '',
-      path: typeof payload.path === 'string' ? payload.path : '',
+    // Lifecycle & status
+    handle('novalinkLive:status', () => novalink.status());
+    handle('novalinkLive:boot', (_event, payload = {}) => novalink.boot({
+      baseUrl: liveStr(payload.baseUrl, 400, 'Server address') || undefined,
+      autoConnect: payload.autoConnect !== false,
     }));
-    handle('novalink:share-file', (_event, payload = {}) => novalink.shareFile({
-      peerId: requireId(payload.peerId, 'A peer id'),
-      root: typeof payload.root === 'string' ? payload.root : '',
-      path: typeof payload.path === 'string' ? payload.path : '',
+    handle('novalinkLive:configure', (_event, payload = {}) => novalink.configure({
+      baseUrl: liveStr(payload.baseUrl, 400, 'Server address'),
     }));
-    handle('novalink:accept-transfer', (_event, { transferId } = {}) => novalink.acceptTransfer(requireId(transferId, 'A transfer id')));
-    handle('novalink:reject-transfer', (_event, { transferId } = {}) => novalink.rejectTransfer(requireId(transferId, 'A transfer id')));
-    handle('novalink:cancel-transfer', (_event, { transferId } = {}) => novalink.cancelTransfer(requireId(transferId, 'A transfer id')));
-    handle('novalink:save-transfer', (_event, payload = {}) => novalink.saveTransfer(requireId(payload.transferId, 'A transfer id'), {
-      root: typeof payload.root === 'string' ? payload.root : '',
-      dir: typeof payload.dir === 'string' ? payload.dir : '',
-      name: typeof payload.name === 'string' ? payload.name : '',
-      overwrite: Boolean(payload.overwrite),
+    handle('novalinkLive:reconnect', () => novalink.reconnectNow());
+
+    // Auth & profile
+    handle('novalinkLive:register', (_event, payload = {}) => novalink.register({
+      username: liveStr(payload.username, 32, 'A username', { required: true }),
+      password: liveStr(payload.password, 256, 'A password', { required: true }),
+      displayName: liveStr(payload.displayName, 64, 'Display name') || undefined,
+      bio: liveStr(payload.bio, 500, 'Bio') || undefined,
     }));
+    handle('novalinkLive:login', (_event, payload = {}) => novalink.login({
+      username: liveStr(payload.username, 64, 'A username', { required: true }),
+      password: liveStr(payload.password, 256, 'A password', { required: true }),
+    }));
+    handle('novalinkLive:logout', () => novalink.logout());
+    handle('novalinkLive:me', () => novalink.me());
+    handle('novalinkLive:bootstrap', () => novalink.bootstrap());
+    handle('novalinkLive:updateProfile', (_event, payload = {}) => novalink.updateProfile({
+      displayName: liveStr(payload.displayName, 64, 'Display name'),
+      bio: liveStr(payload.bio, 500, 'Bio'),
+    }));
+    handle('novalinkLive:uploadAvatar', (_event, payload = {}) => novalink.uploadAvatar({
+      bytes: liveBytes(payload.bytes, 2 * 1024 * 1024),
+      fileName: liveStr(payload.fileName, 128, 'File name') || 'avatar.png',
+    }));
+    handle('novalinkLive:deleteAvatar', () => novalink.deleteAvatar());
+    handle('novalinkLive:changePassword', (_event, payload = {}) => novalink.changePassword({
+      currentPassword: liveStr(payload.currentPassword, 256, 'Your current password', { required: true }),
+      newPassword: liveStr(payload.newPassword, 256, 'A new password', { required: true }),
+    }));
+    handle('novalinkLive:updatePrivacy', (_event, payload = {}) => {
+      const body = {};
+      for (const key of ['presenceVisibleTo', 'contactRequestsFrom']) {
+        if (payload[key] !== undefined) body[key] = liveStr(payload[key], 32, key);
+      }
+      for (const key of ['appearOffline', 'showLastActive', 'readReceiptsEnabled', 'callsEnabled', 'attachmentsEnabled']) {
+        const v = liveBool(payload[key]);
+        if (v !== undefined) body[key] = v;
+      }
+      return novalink.updatePrivacy(body);
+    });
+
+    // Directory & connections
+    handle('novalinkLive:searchUsers', (_event, payload = {}) => novalink.searchUsers({
+      q: liveStr(payload.q, 64, 'Search query'),
+      limit: liveInt(payload.limit, { min: 1, max: 50 }),
+    }));
+    handle('novalinkLive:getUser', (_event, payload = {}) => novalink.getUser(liveId(payload.userId, 'User id')));
+    handle('novalinkLive:listContacts', () => novalink.listContacts());
+    handle('novalinkLive:listRequests', () => novalink.listRequests());
+    handle('novalinkLive:requestConnection', (_event, payload = {}) => novalink.requestConnection({
+      userId: liveOptId(payload.userId, 'User id'),
+      username: liveStr(payload.username, 64, 'Username') || undefined,
+      message: liveStr(payload.message, 240, 'Message') || undefined,
+    }));
+    handle('novalinkLive:acceptRequest', (_event, payload = {}) => novalink.acceptRequest(liveId(payload.requestId, 'Request id')));
+    handle('novalinkLive:rejectRequest', (_event, payload = {}) => novalink.rejectRequest(liveId(payload.requestId, 'Request id')));
+    handle('novalinkLive:removeContact', (_event, payload = {}) => novalink.removeContact(liveId(payload.userId, 'User id')));
+    handle('novalinkLive:listBlocked', () => novalink.listBlocked());
+    handle('novalinkLive:blockUser', (_event, payload = {}) => novalink.blockUser(liveId(payload.userId, 'User id')));
+    handle('novalinkLive:unblockUser', (_event, payload = {}) => novalink.unblockUser(liveId(payload.userId, 'User id')));
+    handle('novalinkLive:reportUser', (_event, payload = {}) => novalink.reportUser({
+      userId: liveId(payload.userId, 'User id'),
+      reason: liveStr(payload.reason, 80, 'Reason') || undefined,
+      detail: liveStr(payload.detail, 1000, 'Detail') || undefined,
+    }));
+
+    // Conversations & messages
+    handle('novalinkLive:listConversations', () => novalink.listConversations());
+    handle('novalinkLive:createConversation', (_event, payload = {}) => novalink.createConversation({
+      kind: liveStr(payload.kind, 12, 'Kind') || undefined,
+      otherUserId: liveOptId(payload.otherUserId, 'Other user id'),
+      memberIds: liveIdList(payload.memberIds, 'Member id', 64),
+      title: liveStr(payload.title, 120, 'Title') || undefined,
+    }));
+    handle('novalinkLive:getConversation', (_event, payload = {}) => novalink.getConversation(liveId(payload.conversationId, 'Conversation id')));
+    handle('novalinkLive:listMessages', (_event, payload = {}) => novalink.listMessages(liveId(payload.conversationId, 'Conversation id'), {
+      before: payload.before === undefined || payload.before === null ? undefined : String(payload.before).slice(0, 24),
+      limit: liveInt(payload.limit, { min: 1, max: 200 }),
+    }));
+    handle('novalinkLive:sendMessage', (_event, payload = {}) => novalink.sendMessage(liveId(payload.conversationId, 'Conversation id'), {
+      body: liveStr(payload.body, 8000, 'A message', { required: true }),
+      kind: ['text', 'code', 'file'].includes(payload.kind) ? payload.kind : undefined,
+      metadata: payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : undefined,
+      language: liveStr(payload.language, 24, 'Language') || undefined,
+      replyToId: liveOptId(payload.replyToId, 'Reply-to message id'),
+      clientId: liveStr(payload.clientId, 64, 'Client id') || undefined,
+      attachmentIds: liveIdList(payload.attachmentIds, 'Attachment id', 8),
+    }));
+    handle('novalinkLive:markRead', (_event, payload = {}) => novalink.markRead(
+      liveId(payload.conversationId, 'Conversation id'),
+      liveInt(payload.seq, { min: 0, max: 1_000_000_000 }),
+    ));
+    handle('novalinkLive:listAttachments', (_event, payload = {}) => novalink.listAttachments(liveId(payload.conversationId, 'Conversation id')));
+    handle('novalinkLive:searchMessages', (_event, payload = {}) => novalink.searchMessages({
+      q: liveStr(payload.q, 120, 'Search query'),
+      conversationId: liveOptId(payload.conversationId, 'Conversation id'),
+      limit: liveInt(payload.limit, { min: 1, max: 50 }),
+    }));
+    handle('novalinkLive:addReaction', (_event, payload = {}) => novalink.addReaction(
+      liveId(payload.messageId, 'Message id'),
+      liveStr(payload.emoji, 32, 'An emoji', { required: true }),
+    ));
+    handle('novalinkLive:removeReaction', (_event, payload = {}) => novalink.removeReaction(
+      liveId(payload.messageId, 'Message id'),
+      liveStr(payload.emoji, 32, 'An emoji', { required: true }),
+    ));
+
+    // Files & avatars
+    handle('novalinkLive:uploadFile', (_event, payload = {}) => novalink.uploadFile({
+      conversationId: liveId(payload.conversationId, 'Conversation id'),
+      bytes: liveBytes(payload.bytes, 25 * 1024 * 1024),
+      fileName: liveStr(payload.fileName, 200, 'File name') || 'file.bin',
+    }));
+    handle('novalinkLive:downloadFile', (_event, payload = {}) => novalink.downloadFile(liveId(payload.fileId, 'File id')));
+    handle('novalinkLive:deleteFile', (_event, payload = {}) => novalink.deleteFile(liveId(payload.fileId, 'File id')));
+    handle('novalinkLive:avatarUrl', (_event, payload = {}) => ({ url: novalink.avatarUrl(liveId(payload.avatarId, 'Avatar id')) }));
+    handle('novalinkLive:fetchAvatar', (_event, payload = {}) => novalink.fetchAvatar(liveId(payload.avatarId, 'Avatar id')));
+
+    // Calls
+    handle('novalinkLive:startCall', (_event, payload = {}) => novalink.startCall(
+      liveId(payload.conversationId, 'Conversation id'),
+      liveStr(payload.mode, 12, 'Mode') || 'audio',
+    ));
+    handle('novalinkLive:acceptCall', (_event, payload = {}) => novalink.acceptCall(liveId(payload.callId, 'Call id')));
+    handle('novalinkLive:declineCall', (_event, payload = {}) => novalink.declineCall(liveId(payload.callId, 'Call id')));
+    handle('novalinkLive:endCall', (_event, payload = {}) => novalink.endCall(
+      liveId(payload.callId, 'Call id'),
+      liveStr(payload.reason, 40, 'Reason') || undefined,
+    ));
+    handle('novalinkLive:cancelCall', (_event, payload = {}) => novalink.cancelCall(liveId(payload.callId, 'Call id')));
+    handle('novalinkLive:currentCall', () => novalink.currentCall());
+    handle('novalinkLive:callHistory', (_event, payload = {}) => novalink.callHistory(
+      liveId(payload.conversationId, 'Conversation id'),
+      liveInt(payload.limit, { min: 1, max: 50 }),
+    ));
+
+    // Realtime frames — the only 5 the server accepts, so the surface is closed.
+    handle('novalinkLive:sendPing', (_event, payload = {}) => novalink.sendPing(liveStr(payload.id, 64, 'Ping id') || undefined));
+    handle('novalinkLive:sendPresence', (_event, payload = {}) => novalink.sendPresence(liveStr(payload.status, 16, 'Presence status', { required: true })));
+    handle('novalinkLive:sendTyping', (_event, payload = {}) => novalink.sendTyping({
+      conversationId: liveId(payload.conversationId, 'Conversation id'),
+      typing: payload.typing !== false,
+    }));
+    handle('novalinkLive:sendMessageRead', (_event, payload = {}) => novalink.sendMessageRead({
+      conversationId: liveId(payload.conversationId, 'Conversation id'),
+      seq: liveInt(payload.seq, { min: 0, max: 1_000_000_000 }) || 0,
+    }));
+    handle('novalinkLive:sendCallSignal', (_event, payload = {}) => {
+      // `payload.payload` is the SDP/candidate/mute body; forwarded verbatim
+      // because the Live client clips per signal kind before the socket send.
+      const inner = payload.payload && typeof payload.payload === 'object' && !Array.isArray(payload.payload) ? payload.payload : {};
+      return novalink.sendCallSignal({
+        callId: liveId(payload.callId, 'Call id'),
+        toUserId: liveId(payload.toUserId, 'Peer id'),
+        signal: liveStr(payload.signal, 24, 'Signal kind', { required: true }),
+        payload: inner,
+      });
+    });
+
+    // Native notifications. The renderer never touches `new Notification()`;
+    // every OS-visible toast goes through this channel so we can rate, gate,
+    // and — critically — hand focus back to the correct window on click.
+    handle('novalinkLive:notify', (event, payload = {}) => {
+      const title = liveStr(payload.title, 80, 'Notification title', { required: true });
+      const body = liveStr(payload.body, 200, 'Notification body');
+      const conversationId = liveOptId(payload.conversationId);
+      const Notification = electron.Notification;
+      if (!Notification || typeof Notification.isSupported !== 'function' || !Notification.isSupported()) {
+        return { ok: false, reason: 'unsupported' };
+      }
+      const sender = event.sender;
+      const notification = new Notification({
+        title,
+        body,
+        silent: false,
+        urgency: 'normal',
+      });
+      notification.once('click', () => {
+        try {
+          const win = getWindowForSender(sender);
+          if (win && !win.isDestroyed()) {
+            if (typeof win.show === 'function') win.show();
+            if (typeof win.focus === 'function') win.focus();
+            if (win.webContents && !win.webContents.isDestroyed()) {
+              win.webContents.send('novalinkLive:open-conversation', { conversationId });
+            }
+          }
+        } catch {
+          // Focus restoration is best-effort.
+        }
+      });
+      notification.show();
+      return { ok: true };
+    });
   }
 
   return { channelCount: handlers.size };

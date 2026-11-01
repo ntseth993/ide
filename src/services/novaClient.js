@@ -342,81 +342,206 @@ export const client = {
     return nova.deployPreviewStop();
   },
 
-  // ---- NovaLink peer-to-peer collaboration -----------------------------------
-  // The panel renders a single state snapshot streamed from the main process.
-  // Outside Electron there is no collaboration, so status resolves to an
-  // empty, flagged snapshot and every action requires the desktop bridge.
-  async novalinkStatus() {
-    if (!nova || typeof nova.novalinkStatus !== 'function') {
+  // ---- Hosting providers (real Vercel / Netlify deployments) ----------------
+  // Provider descriptors are readable without the desktop bridge so the panel
+  // can explain what is missing; everything that touches an account or the
+  // network needs the bridge. An access token only ever goes IN — no method
+  // returns one.
+  async deployProviders() {
+    // Resolves to an empty list outside Electron: the panel then explains that
+    // deploying needs the desktop app, instead of pretending there are no hosts.
+    if (!nova || typeof nova.deployProviders !== 'function') return [];
+    return nova.deployProviders();
+  },
+  async deployConnections() {
+    requireBridgeMethod('deployConnections', 'Hosting account status');
+    return nova.deployConnections();
+  },
+  async deployConnect(payload) {
+    requireBridgeMethod('deployConnect', 'Connecting a hosting account');
+    return nova.deployConnect(payload);
+  },
+  async deployDisconnect(payload) {
+    requireBridgeMethod('deployDisconnect', 'Disconnecting a hosting account');
+    return nova.deployDisconnect(payload);
+  },
+  async deployTeams(payload) {
+    requireBridgeMethod('deployTeams', 'Team listing');
+    return nova.deployTeams(payload);
+  },
+  async deployProjects(payload) {
+    requireBridgeMethod('deployProjects', 'Project listing');
+    return nova.deployProjects(payload);
+  },
+  async deployDeploys(payload) {
+    requireBridgeMethod('deployDeploys', 'Deployment listing');
+    return nova.deployDeploys(payload);
+  },
+  async deployDomains(payload) {
+    requireBridgeMethod('deployDomains', 'Custom domain status');
+    return nova.deployDomains(payload);
+  },
+  async deployProviderLogs(payload) {
+    requireBridgeMethod('deployProviderLogs', 'Provider build logs');
+    return nova.deployProviderLogs(payload);
+  },
+  async deployPlan(payload) {
+    requireBridgeMethod('deployPlan', 'The deployment review screen');
+    return nova.deployPlan(payload);
+  },
+  async deployStart(payload) {
+    requireBridgeMethod('deployStart', 'Deploying to a host');
+    return nova.deployStart(payload);
+  },
+  async deployRedeploy(payload) {
+    requireBridgeMethod('deployRedeploy', 'Redeploying');
+    return nova.deployRedeploy(payload);
+  },
+  async deployStatus(payload) {
+    requireBridgeMethod('deployStatus', 'Deployment status');
+    return nova.deployStatus(payload);
+  },
+  async deployRuns() {
+    if (!nova || typeof nova.deployRuns !== 'function') return [];
+    return nova.deployRuns();
+  },
+  async deployRefresh(payload) {
+    requireBridgeMethod('deployRefresh', 'Refreshing deployment status');
+    return nova.deployRefresh(payload);
+  },
+  async deployCancel(payload) {
+    requireBridgeMethod('deployCancel', 'Cancelling a deployment');
+    return nova.deployCancel(payload);
+  },
+  async deployRunLogs(payload) {
+    requireBridgeMethod('deployRunLogs', 'Deployment logs');
+    return nova.deployRunLogs(payload);
+  },
+  // A written explanation of a failed deployment. Only ever called when the
+  // developer clicks it; the answer comes from the main process, where the
+  // evidence has already been stripped of credentials.
+  async deployDiagnose(payload) {
+    requireBridgeMethod('deployDiagnose', 'Explaining a failed deployment');
+    return nova.deployDiagnose(payload);
+  },
+  async deployHistory(payload) {
+    requireBridgeMethod('deployHistory', 'Deployment history');
+    return nova.deployHistory(payload);
+  },
+  async deployHistoryClear(payload) {
+    requireBridgeMethod('deployHistoryClear', 'Clearing deployment history');
+    return nova.deployHistoryClear(payload);
+  },
+  async deployPreferences() {
+    if (!nova || typeof nova.deployPreferences !== 'function') return { provider: '', teams: {} };
+    return nova.deployPreferences();
+  },
+  async deploySetPreferences(payload) {
+    requireBridgeMethod('deploySetPreferences', 'Deploy preferences');
+    return nova.deploySetPreferences(payload);
+  },
+  // main -> renderer: live progress of the deployment this window started.
+  onDeployEvent(callback) {
+    return nova?.onDeployEvent ? nova.onDeployEvent(callback) : () => {};
+  },
+
+  // ---- NovaLink Live (internet-connected team collaboration) ------------
+  //
+  // Outside Electron there is no live socket: `novalinkLiveStatus` resolves to
+  // a signed-off snapshot so the panel can render a "not available in the web
+  // preview" hint without throwing. Every other method requires the desktop
+  // bridge; if the bridge is missing we throw rather than returning a fake
+  // success, because silently faking an online action would leave a developer
+  // staring at a message they think was sent that never hit the server.
+  //
+  // Names mirror the preload surface 1:1. Nothing here is a passthrough: there
+  // is no generic invoke exposed to React.
+  async novalinkLiveStatus() {
+    if (!nova || typeof nova.novalinkLiveStatus !== 'function') {
       return {
-        ready: false, unavailable: true, scanning: false, activeTransport: null,
-        identity: null, transports: [], nearby: [], requests: { incoming: [], outgoing: [] },
-        peers: [], chats: {}, transfers: [], bluetooth: null,
+        configured: false, baseUrl: '', signedIn: false, connected: false, ready: false,
+        user: null, privacy: null, server: null,
+        reconnectAttempt: 0, lastError: null, lastErrorAt: null,
       };
     }
-    return nova.novalinkStatus();
+    return nova.novalinkLiveStatus();
   },
-  async novalinkDiscover() {
-    requireDesktop();
-    return nova.novalinkDiscover();
+
+  // lifecycle
+  novalinkLiveBoot(payload) { requireDesktop(); return nova.novalinkLiveBoot(payload); },
+  novalinkLiveConfigure(payload) { requireDesktop(); return nova.novalinkLiveConfigure(payload); },
+  novalinkLiveReconnect() { requireDesktop(); return nova.novalinkLiveReconnect(); },
+
+  // auth & profile
+  novalinkLiveRegister(payload) { requireDesktop(); return nova.novalinkLiveRegister(payload); },
+  novalinkLiveLogin(payload) { requireDesktop(); return nova.novalinkLiveLogin(payload); },
+  novalinkLiveLogout() { requireDesktop(); return nova.novalinkLiveLogout(); },
+  novalinkLiveMe() { requireDesktop(); return nova.novalinkLiveMe(); },
+  novalinkLiveBootstrap() { requireDesktop(); return nova.novalinkLiveBootstrap(); },
+  novalinkLiveUpdateProfile(payload) { requireDesktop(); return nova.novalinkLiveUpdateProfile(payload); },
+  novalinkLiveUploadAvatar(payload) { requireDesktop(); return nova.novalinkLiveUploadAvatar(payload); },
+  novalinkLiveDeleteAvatar() { requireDesktop(); return nova.novalinkLiveDeleteAvatar(); },
+  novalinkLiveChangePassword(payload) { requireDesktop(); return nova.novalinkLiveChangePassword(payload); },
+  novalinkLiveUpdatePrivacy(payload) { requireDesktop(); return nova.novalinkLiveUpdatePrivacy(payload); },
+
+  // directory & connections
+  novalinkLiveSearchUsers(payload) { requireDesktop(); return nova.novalinkLiveSearchUsers(payload); },
+  novalinkLiveGetUser(userId) { requireDesktop(); return nova.novalinkLiveGetUser(userId); },
+  novalinkLiveListContacts() { requireDesktop(); return nova.novalinkLiveListContacts(); },
+  novalinkLiveListRequests() { requireDesktop(); return nova.novalinkLiveListRequests(); },
+  novalinkLiveRequestConnection(payload) { requireDesktop(); return nova.novalinkLiveRequestConnection(payload); },
+  novalinkLiveAcceptRequest(requestId) { requireDesktop(); return nova.novalinkLiveAcceptRequest(requestId); },
+  novalinkLiveRejectRequest(requestId) { requireDesktop(); return nova.novalinkLiveRejectRequest(requestId); },
+  novalinkLiveRemoveContact(userId) { requireDesktop(); return nova.novalinkLiveRemoveContact(userId); },
+  novalinkLiveListBlocked() { requireDesktop(); return nova.novalinkLiveListBlocked(); },
+  novalinkLiveBlockUser(userId) { requireDesktop(); return nova.novalinkLiveBlockUser(userId); },
+  novalinkLiveUnblockUser(userId) { requireDesktop(); return nova.novalinkLiveUnblockUser(userId); },
+  novalinkLiveReportUser(payload) { requireDesktop(); return nova.novalinkLiveReportUser(payload); },
+
+  // conversations & messages
+  novalinkLiveListConversations() { requireDesktop(); return nova.novalinkLiveListConversations(); },
+  novalinkLiveCreateConversation(payload) { requireDesktop(); return nova.novalinkLiveCreateConversation(payload); },
+  novalinkLiveGetConversation(conversationId) { requireDesktop(); return nova.novalinkLiveGetConversation(conversationId); },
+  novalinkLiveListMessages(payload) { requireDesktop(); return nova.novalinkLiveListMessages(payload); },
+  novalinkLiveSendMessage(payload) { requireDesktop(); return nova.novalinkLiveSendMessage(payload); },
+  novalinkLiveMarkRead(payload) { requireDesktop(); return nova.novalinkLiveMarkRead(payload); },
+  novalinkLiveListAttachments(conversationId) { requireDesktop(); return nova.novalinkLiveListAttachments(conversationId); },
+  novalinkLiveSearchMessages(payload) { requireDesktop(); return nova.novalinkLiveSearchMessages(payload); },
+  novalinkLiveAddReaction(payload) { requireDesktop(); return nova.novalinkLiveAddReaction(payload); },
+  novalinkLiveRemoveReaction(payload) { requireDesktop(); return nova.novalinkLiveRemoveReaction(payload); },
+
+  // files & avatars
+  novalinkLiveUploadFile(payload) { requireDesktop(); return nova.novalinkLiveUploadFile(payload); },
+  novalinkLiveDownloadFile(fileId) { requireDesktop(); return nova.novalinkLiveDownloadFile(fileId); },
+  novalinkLiveDeleteFile(fileId) { requireDesktop(); return nova.novalinkLiveDeleteFile(fileId); },
+  novalinkLiveAvatarUrl(avatarId) { requireDesktop(); return nova.novalinkLiveAvatarUrl(avatarId); },
+  novalinkLiveFetchAvatar(avatarId) { requireDesktop(); return nova.novalinkLiveFetchAvatar(avatarId); },
+
+  // calls
+  novalinkLiveStartCall(payload) { requireDesktop(); return nova.novalinkLiveStartCall(payload); },
+  novalinkLiveAcceptCall(callId) { requireDesktop(); return nova.novalinkLiveAcceptCall(callId); },
+  novalinkLiveDeclineCall(callId) { requireDesktop(); return nova.novalinkLiveDeclineCall(callId); },
+  novalinkLiveEndCall(payload) { requireDesktop(); return nova.novalinkLiveEndCall(payload); },
+  novalinkLiveCancelCall(callId) { requireDesktop(); return nova.novalinkLiveCancelCall(callId); },
+  novalinkLiveCurrentCall() { requireDesktop(); return nova.novalinkLiveCurrentCall(); },
+  novalinkLiveCallHistory(payload) { requireDesktop(); return nova.novalinkLiveCallHistory(payload); },
+
+  // realtime frames
+  novalinkLiveSendPing(payload) { requireDesktop(); return nova.novalinkLiveSendPing(payload); },
+  novalinkLiveSendPresence(payload) { requireDesktop(); return nova.novalinkLiveSendPresence(payload); },
+  novalinkLiveSendTyping(payload) { requireDesktop(); return nova.novalinkLiveSendTyping(payload); },
+  novalinkLiveSendMessageRead(payload) { requireDesktop(); return nova.novalinkLiveSendMessageRead(payload); },
+  novalinkLiveSendCallSignal(payload) { requireDesktop(); return nova.novalinkLiveSendCallSignal(payload); },
+  novalinkLiveNotify(payload) { requireDesktop(); return nova.novalinkLiveNotify(payload); },
+
+  // main -> renderer subscriptions
+  onNovaLinkLiveEvent(callback) {
+    return nova?.onNovaLinkLiveEvent ? nova.onNovaLinkLiveEvent(callback) : () => {};
   },
-  async novalinkStopDiscovery() {
-    requireDesktop();
-    return nova.novalinkStopDiscovery();
+  onNovaLinkLiveStatus(callback) {
+    return nova?.onNovaLinkLiveStatus ? nova.onNovaLinkLiveStatus(callback) : () => {};
   },
-  async novalinkEnableBluetooth() {
-    requireBridgeMethod('novalinkEnableBluetooth', 'Bluetooth controls');
-    return nova.novalinkEnableBluetooth();
-  },
-  async novalinkScanBluetooth() {
-    requireBridgeMethod('novalinkScanBluetooth', 'Bluetooth device scanning');
-    return nova.novalinkScanBluetooth();
-  },
-  async novalinkConnect(peerId) {
-    requireDesktop();
-    return nova.novalinkConnect(peerId);
-  },
-  async novalinkAcceptConnection(peerId) {
-    requireDesktop();
-    return nova.novalinkAcceptConnection(peerId);
-  },
-  async novalinkRejectConnection(peerId) {
-    requireDesktop();
-    return nova.novalinkRejectConnection(peerId);
-  },
-  async novalinkDisconnect(peerId) {
-    requireDesktop();
-    return nova.novalinkDisconnect(peerId);
-  },
-  async novalinkSendMessage(peerId, text) {
-    requireDesktop();
-    return nova.novalinkSendMessage(peerId, text);
-  },
-  async novalinkShareCode(payload) {
-    requireDesktop();
-    return nova.novalinkShareCode(payload);
-  },
-  async novalinkShareFile(payload) {
-    requireDesktop();
-    return nova.novalinkShareFile(payload);
-  },
-  async novalinkAcceptTransfer(transferId) {
-    requireDesktop();
-    return nova.novalinkAcceptTransfer(transferId);
-  },
-  async novalinkRejectTransfer(transferId) {
-    requireDesktop();
-    return nova.novalinkRejectTransfer(transferId);
-  },
-  async novalinkCancelTransfer(transferId) {
-    requireDesktop();
-    return nova.novalinkCancelTransfer(transferId);
-  },
-  async novalinkSaveTransfer(payload) {
-    requireDesktop();
-    return nova.novalinkSaveTransfer(payload);
-  },
-  onNovaLinkEvent(callback) {
-    return nova?.onNovaLinkEvent ? nova.onNovaLinkEvent(callback) : () => {};
+  onNovaLinkLiveOpenConversation(callback) {
+    return nova?.onNovaLinkLiveOpenConversation ? nova.onNovaLinkLiveOpenConversation(callback) : () => {};
   },
 };

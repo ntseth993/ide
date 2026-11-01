@@ -112,24 +112,117 @@ const api = {
   deployPreviewStart: (payload) => invoke('deploy:previewStart', payload),
   deployPreviewStop: () => invoke('deploy:previewStop'),
 
-  // NovaLink peer-to-peer collaboration (narrow, validated channels only).
-  novalinkStatus: () => invoke('novalink:status'),
-  novalinkDiscover: () => invoke('novalink:discover'),
-  novalinkStopDiscovery: () => invoke('novalink:stop-discovery'),
-  novalinkEnableBluetooth: () => invoke('novalink:enable-bluetooth'),
-  novalinkScanBluetooth: () => invoke('novalink:scan-bluetooth'),
-  novalinkConnect: (peerId) => invoke('novalink:connect', { peerId }),
-  novalinkAcceptConnection: (peerId) => invoke('novalink:accept-connection', { peerId }),
-  novalinkRejectConnection: (peerId) => invoke('novalink:reject-connection', { peerId }),
-  novalinkDisconnect: (peerId) => invoke('novalink:disconnect', { peerId }),
-  novalinkSendMessage: (peerId, text) => invoke('novalink:send-message', { peerId, text }),
-  novalinkShareCode: (payload) => invoke('novalink:share-code', payload),
-  novalinkShareFile: (payload) => invoke('novalink:share-file', payload),
-  novalinkAcceptTransfer: (transferId) => invoke('novalink:accept-transfer', { transferId }),
-  novalinkRejectTransfer: (transferId) => invoke('novalink:reject-transfer', { transferId }),
-  novalinkCancelTransfer: (transferId) => invoke('novalink:cancel-transfer', { transferId }),
-  novalinkSaveTransfer: (payload) => invoke('novalink:save-transfer', payload),
-  onNovaLinkEvent: (callback) => subscribe('novalink:event', callback),
+  // Hosting providers (Vercel / Netlify). These channels are the renderer's only
+  // route to a real publish: an access token is written once through
+  // deployConnect and is never read back — every response carries account info,
+  // statuses and URLs, never the credential itself.
+  deployProviders: () => invoke('deploy:providers'),
+  deployConnections: () => invoke('deploy:connections'),
+  deployConnect: (payload) => invoke('deploy:connect', payload),
+  deployDisconnect: (payload) => invoke('deploy:disconnect', payload),
+  deployTeams: (payload) => invoke('deploy:teams', payload),
+  deployProjects: (payload) => invoke('deploy:projects', payload),
+  deployDeploys: (payload) => invoke('deploy:deploys', payload),
+  deployDomains: (payload) => invoke('deploy:domains', payload),
+  deployProviderLogs: (payload) => invoke('deploy:providerLogs', payload),
+  deployPlan: (payload) => invoke('deploy:plan', payload),
+  deployStart: (payload) => invoke('deploy:start', payload),
+  deployRedeploy: (payload) => invoke('deploy:redeploy', payload),
+  deployStatus: (payload) => invoke('deploy:status', payload),
+  deployRuns: () => invoke('deploy:runs'),
+  deployRefresh: (payload) => invoke('deploy:refresh', payload),
+  deployCancel: (payload) => invoke('deploy:cancel', payload),
+  deployRunLogs: (payload) => invoke('deploy:runLogs', payload),
+  // Ask for a written explanation of a failed run. Explicit click only, and the
+  // answer is built from evidence the main process has already stripped of secrets.
+  deployDiagnose: (payload) => invoke('deploy:diagnose', payload),
+  deployHistory: (payload) => invoke('deploy:history', payload),
+  deployHistoryClear: (payload) => invoke('deploy:historyClear', payload),
+  deployPreferences: () => invoke('deploy:preferences'),
+  deploySetPreferences: (payload) => invoke('deploy:setPreferences', payload),
+  // main -> renderer: progress of a running deployment (phase/state/log lines).
+  onDeployEvent: (callback) => subscribe('deploy:event', callback),
+
+  // NovaLink Live — internet-connected team collaboration.
+  //
+  // Each method is bound to exactly one validated IPC channel in the main
+  // process. The session bearer token never crosses back to the renderer, and
+  // every server frame arrives on one subscription channel (`novalinkLive:event`)
+  // so the renderer never has to poll. Names mirror the main-process service
+  // 1:1 for auditability.
+  novalinkLiveStatus: () => invoke('novalinkLive:status'),
+  novalinkLiveBoot: (payload) => invoke('novalinkLive:boot', payload || {}),
+  novalinkLiveConfigure: (payload) => invoke('novalinkLive:configure', payload || {}),
+  novalinkLiveReconnect: () => invoke('novalinkLive:reconnect'),
+
+  // auth & profile
+  novalinkLiveRegister: (payload) => invoke('novalinkLive:register', payload || {}),
+  novalinkLiveLogin: (payload) => invoke('novalinkLive:login', payload || {}),
+  novalinkLiveLogout: () => invoke('novalinkLive:logout'),
+  novalinkLiveMe: () => invoke('novalinkLive:me'),
+  novalinkLiveBootstrap: () => invoke('novalinkLive:bootstrap'),
+  novalinkLiveUpdateProfile: (payload) => invoke('novalinkLive:updateProfile', payload || {}),
+  novalinkLiveUploadAvatar: (payload) => invoke('novalinkLive:uploadAvatar', payload || {}),
+  novalinkLiveDeleteAvatar: () => invoke('novalinkLive:deleteAvatar'),
+  novalinkLiveChangePassword: (payload) => invoke('novalinkLive:changePassword', payload || {}),
+  novalinkLiveUpdatePrivacy: (payload) => invoke('novalinkLive:updatePrivacy', payload || {}),
+
+  // directory & connections
+  novalinkLiveSearchUsers: (payload) => invoke('novalinkLive:searchUsers', payload || {}),
+  novalinkLiveGetUser: (userId) => invoke('novalinkLive:getUser', { userId }),
+  novalinkLiveListContacts: () => invoke('novalinkLive:listContacts'),
+  novalinkLiveListRequests: () => invoke('novalinkLive:listRequests'),
+  novalinkLiveRequestConnection: (payload) => invoke('novalinkLive:requestConnection', payload || {}),
+  novalinkLiveAcceptRequest: (requestId) => invoke('novalinkLive:acceptRequest', { requestId }),
+  novalinkLiveRejectRequest: (requestId) => invoke('novalinkLive:rejectRequest', { requestId }),
+  novalinkLiveRemoveContact: (userId) => invoke('novalinkLive:removeContact', { userId }),
+  novalinkLiveListBlocked: () => invoke('novalinkLive:listBlocked'),
+  novalinkLiveBlockUser: (userId) => invoke('novalinkLive:blockUser', { userId }),
+  novalinkLiveUnblockUser: (userId) => invoke('novalinkLive:unblockUser', { userId }),
+  novalinkLiveReportUser: (payload) => invoke('novalinkLive:reportUser', payload || {}),
+
+  // conversations & messages
+  novalinkLiveListConversations: () => invoke('novalinkLive:listConversations'),
+  novalinkLiveCreateConversation: (payload) => invoke('novalinkLive:createConversation', payload || {}),
+  novalinkLiveGetConversation: (conversationId) => invoke('novalinkLive:getConversation', { conversationId }),
+  novalinkLiveListMessages: (payload) => invoke('novalinkLive:listMessages', payload || {}),
+  novalinkLiveSendMessage: (payload) => invoke('novalinkLive:sendMessage', payload || {}),
+  novalinkLiveMarkRead: (payload) => invoke('novalinkLive:markRead', payload || {}),
+  novalinkLiveListAttachments: (conversationId) => invoke('novalinkLive:listAttachments', { conversationId }),
+  novalinkLiveSearchMessages: (payload) => invoke('novalinkLive:searchMessages', payload || {}),
+  novalinkLiveAddReaction: (payload) => invoke('novalinkLive:addReaction', payload || {}),
+  novalinkLiveRemoveReaction: (payload) => invoke('novalinkLive:removeReaction', payload || {}),
+
+  // files & avatars
+  novalinkLiveUploadFile: (payload) => invoke('novalinkLive:uploadFile', payload || {}),
+  novalinkLiveDownloadFile: (fileId) => invoke('novalinkLive:downloadFile', { fileId }),
+  novalinkLiveDeleteFile: (fileId) => invoke('novalinkLive:deleteFile', { fileId }),
+  novalinkLiveAvatarUrl: (avatarId) => invoke('novalinkLive:avatarUrl', { avatarId }),
+  novalinkLiveFetchAvatar: (avatarId) => invoke('novalinkLive:fetchAvatar', { avatarId }),
+
+  // calls
+  novalinkLiveStartCall: (payload) => invoke('novalinkLive:startCall', payload || {}),
+  novalinkLiveAcceptCall: (callId) => invoke('novalinkLive:acceptCall', { callId }),
+  novalinkLiveDeclineCall: (callId) => invoke('novalinkLive:declineCall', { callId }),
+  novalinkLiveEndCall: (payload) => invoke('novalinkLive:endCall', payload || {}),
+  novalinkLiveCancelCall: (callId) => invoke('novalinkLive:cancelCall', { callId }),
+  novalinkLiveCurrentCall: () => invoke('novalinkLive:currentCall'),
+  novalinkLiveCallHistory: (payload) => invoke('novalinkLive:callHistory', payload || {}),
+
+  // realtime frames — the closed set the server accepts on the socket.
+  novalinkLiveSendPing: (payload) => invoke('novalinkLive:sendPing', payload || {}),
+  novalinkLiveSendPresence: (payload) => invoke('novalinkLive:sendPresence', payload || {}),
+  novalinkLiveSendTyping: (payload) => invoke('novalinkLive:sendTyping', payload || {}),
+  novalinkLiveSendMessageRead: (payload) => invoke('novalinkLive:sendMessageRead', payload || {}),
+  novalinkLiveSendCallSignal: (payload) => invoke('novalinkLive:sendCallSignal', payload || {}),
+  novalinkLiveNotify: (payload) => invoke('novalinkLive:notify', payload || {}),
+
+  // main -> renderer: every server-pushed frame in one stream.
+  onNovaLinkLiveEvent: (callback) => subscribe('novalinkLive:event', callback),
+  // main -> renderer: signed snapshot of the connection state (used by StatusBar).
+  onNovaLinkLiveStatus: (callback) => subscribe('novalinkLive:status-event', callback),
+  // main -> renderer: fired when the user clicks a native notification bubble.
+  onNovaLinkLiveOpenConversation: (callback) => subscribe('novalinkLive:open-conversation', callback),
 };
 
 contextBridge.exposeInMainWorld('novaApi', api);

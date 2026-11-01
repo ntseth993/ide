@@ -77,7 +77,7 @@ export default function ActivityBar({
         <button
           type="button"
           className={deployActive ? 'activity-button active' : 'activity-button'}
-          title="Deploy (build & preview project)"
+          title="Deploy (publish to Vercel or Netlify) — Ctrl+Shift+B"
           aria-label="Deploy"
           onClick={onOpenDeploy}
         >

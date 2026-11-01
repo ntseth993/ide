@@ -61,22 +61,62 @@ const services = {
     detectAll: vi.fn(async () => ({ runtimes: [], detectedAt: '2026-10-18T00:00:00.000Z' })),
   },
   novalink: {
-    getStatus: vi.fn(async () => ({ ready: true, peers: [], transfers: [] })),
-    discover: vi.fn(async () => ({ ok: true })),
-    stopScan: vi.fn(async () => ({ ok: true })),
-    enableBluetooth: vi.fn(async () => ({ ok: true, detail: 'Bluetooth adapter enabled.' })),
-    scanBluetoothDevices: vi.fn(async () => ({ ok: true, power: 'on', devices: [], scannedAt: Date.now() })),
-    connect: vi.fn(async (peerId) => ({ ok: true, peerId })),
-    acceptConnection: vi.fn(async (peerId) => ({ ok: true, peerId })),
-    rejectConnection: vi.fn(async (peerId) => ({ ok: true, peerId })),
-    disconnect: vi.fn(async (peerId) => ({ ok: true, peerId })),
-    sendMessage: vi.fn(async (peerId, text) => ({ ok: true, peerId, text })),
-    shareCode: vi.fn(async (payload) => ({ ok: true, ...payload })),
-    shareFile: vi.fn(async (payload) => ({ ok: true, ...payload })),
-    acceptTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
-    rejectTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
-    cancelTransfer: vi.fn(async (transferId) => ({ ok: true, transferId })),
-    saveTransfer: vi.fn(async (transferId, opts) => ({ ok: true, transferId, ...opts })),
+    // NovaLink Live — every method is a stub that resolves with a marker so the
+    // assertions can confirm the channel dispatched to the right one, and the
+    // arguments arrived with the shape the client expects.
+    status: vi.fn(() => ({ configured: true, baseUrl: 'https://link.test', signedIn: false, connected: false, ready: false, user: null, privacy: null, server: null, reconnectAttempt: 0, lastError: null, lastErrorAt: null })),
+    boot: vi.fn(async (payload) => ({ ok: true, boot: payload })),
+    configure: vi.fn(async (payload) => ({ ok: true, configured: payload.baseUrl })),
+    reconnectNow: vi.fn(async () => ({ ok: true })),
+    register: vi.fn(async (payload) => ({ user: { id: 'a'.repeat(8) + '-0000-0000-0000-000000000000', username: payload.username }, privacy: null, server: null, sessions: [] })),
+    login: vi.fn(async (payload) => ({ user: { username: payload.username }, privacy: null, server: null, sessions: [] })),
+    logout: vi.fn(async () => ({ ok: true })),
+    me: vi.fn(async () => ({ user: { username: 'ada' }, privacy: null, server: null })),
+    bootstrap: vi.fn(async () => ({ user: { username: 'ada' }, contacts: [], conversations: [], requests: { incoming: [], outgoing: [] }, unread: 0 })),
+    updateProfile: vi.fn(async (payload) => ({ user: { displayName: payload.displayName } })),
+    uploadAvatar: vi.fn(async (payload) => ({ avatarId: 'b'.repeat(8) + '-0000-0000-0000-000000000000', bytes: payload.bytes.length })),
+    deleteAvatar: vi.fn(async () => ({ ok: true })),
+    changePassword: vi.fn(async () => ({ ok: true, sessions: [] })),
+    updatePrivacy: vi.fn(async (payload) => ({ privacy: payload })),
+    searchUsers: vi.fn(async (payload) => ({ users: [], query: payload.q })),
+    getUser: vi.fn(async (userId) => ({ user: { id: userId } })),
+    listContacts: vi.fn(async () => ({ contacts: [] })),
+    listRequests: vi.fn(async () => ({ incoming: [], outgoing: [] })),
+    requestConnection: vi.fn(async (payload) => ({ ok: true, ...payload })),
+    acceptRequest: vi.fn(async (requestId) => ({ ok: true, requestId })),
+    rejectRequest: vi.fn(async (requestId) => ({ ok: true, requestId })),
+    removeContact: vi.fn(async (userId) => ({ ok: true, userId })),
+    listBlocked: vi.fn(async () => ({ blocked: [] })),
+    blockUser: vi.fn(async (userId) => ({ ok: true, userId })),
+    unblockUser: vi.fn(async (userId) => ({ ok: true, userId })),
+    reportUser: vi.fn(async (payload) => ({ ok: true, ...payload })),
+    listConversations: vi.fn(async () => ({ conversations: [] })),
+    createConversation: vi.fn(async (payload) => ({ conversation: { id: 'c'.repeat(8) + '-0000-0000-0000-000000000000', ...payload } })),
+    getConversation: vi.fn(async (conversationId) => ({ conversation: { id: conversationId } })),
+    listMessages: vi.fn(async (conversationId, opts) => ({ messages: [], conversationId, ...opts })),
+    sendMessage: vi.fn(async (conversationId, payload) => ({ message: { id: 'm'.repeat(8) + '-0000-0000-0000-000000000000', conversationId, ...payload } })),
+    markRead: vi.fn(async (conversationId, seq) => ({ ok: true, conversationId, seq })),
+    listAttachments: vi.fn(async (conversationId) => ({ attachments: [], conversationId })),
+    searchMessages: vi.fn(async (payload) => ({ results: [], query: payload.q })),
+    addReaction: vi.fn(async (messageId, emoji) => ({ ok: true, messageId, emoji })),
+    removeReaction: vi.fn(async (messageId, emoji) => ({ ok: true, messageId, emoji })),
+    uploadFile: vi.fn(async (payload) => ({ file: { id: 'f'.repeat(8) + '-0000-0000-0000-000000000000', bytes: payload.bytes.length, fileName: payload.fileName } })),
+    downloadFile: vi.fn(async (fileId) => ({ bytes: Buffer.alloc(4), mimeType: 'application/octet-stream', disposition: '', sha256: '', fileId })),
+    deleteFile: vi.fn(async (fileId) => ({ ok: true, fileId })),
+    avatarUrl: vi.fn((avatarId) => `https://link.test/api/avatars/${avatarId}`),
+    fetchAvatar: vi.fn(async (avatarId) => ({ bytes: Buffer.alloc(2), mimeType: 'image/png', avatarId })),
+    startCall: vi.fn(async (conversationId, mode) => ({ call: { id: 'd'.repeat(8) + '-0000-0000-0000-000000000000', conversationId, mode }, ringing: [], relayWarning: null })),
+    acceptCall: vi.fn(async (callId) => ({ ok: true, callId })),
+    declineCall: vi.fn(async (callId) => ({ ok: true, callId })),
+    endCall: vi.fn(async (callId, reason) => ({ ok: true, callId, reason })),
+    cancelCall: vi.fn(async (callId) => ({ ok: true, callId })),
+    currentCall: vi.fn(async () => ({ call: null })),
+    callHistory: vi.fn(async (conversationId) => ({ calls: [], conversationId })),
+    sendPing: vi.fn((id) => ({ ok: true, id })),
+    sendPresence: vi.fn((status) => ({ ok: true, status })),
+    sendTyping: vi.fn((payload) => ({ ok: true, ...payload })),
+    sendMessageRead: vi.fn((payload) => ({ ok: true, ...payload })),
+    sendCallSignal: vi.fn((payload) => ({ ok: true, ...payload })),
   },
   terminal: { start: vi.fn(), cancel: vi.fn(), runCapture: vi.fn(async (p) => ({ output: '', code: 0, signal: null, ...p })), profiles: vi.fn(() => ({ platform: 'win32', defaultId: 'powershell', profiles: [{ id: 'powershell', label: 'PowerShell', default: true }] })) },
   settings: { load: vi.fn(async () => ({})), save: vi.fn(async () => ({})) },
@@ -120,7 +160,8 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    expect(channels.size).toBe(67);
+    // 51 non-NovaLink channels + 54 NovaLink Live channels (notify added).
+    expect(channels.size).toBe(105);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -131,8 +172,8 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(67);
-    expect(result.channelCount).toBe(67);
+    expect(secondChannels.size).toBe(105);
+    expect(result.channelCount).toBe(105);
   });
 
   it('exposes the provider catalog and account channels', async () => {
@@ -278,21 +319,100 @@ describe('IPC argument contract', () => {
     expect(await call('window:close')).toMatchObject({ ok: true });
   });
 
-  it('routes NovaLink actions to the service and validates ids', async () => {
-    await call('novalink:discover');
-    expect(services.novalink.discover).toHaveBeenCalledTimes(1);
-    await call('novalink:enable-bluetooth');
-    expect(services.novalink.enableBluetooth).toHaveBeenCalledTimes(1);
-    await call('novalink:scan-bluetooth');
-    expect(services.novalink.scanBluetoothDevices).toHaveBeenCalledTimes(1);
-    await call('novalink:connect', { peerId: ' peer-1 ' });
-    expect(services.novalink.connect).toHaveBeenCalledWith('peer-1');
-    await call('novalink:send-message', { peerId: 'peer-1', text: 'hi' });
-    expect(services.novalink.sendMessage).toHaveBeenCalledWith('peer-1', 'hi');
-    await call('novalink:save-transfer', { transferId: 't-1', root: 'C:\\w', dir: 'NovaLink', name: 'a.txt', overwrite: true });
-    expect(services.novalink.saveTransfer).toHaveBeenCalledWith('t-1', { root: 'C:\\w', dir: 'NovaLink', name: 'a.txt', overwrite: true });
-    await expect(call('novalink:connect', { peerId: '   ' })).rejects.toThrow(/peer id is required/i);
-    await expect(call('novalink:accept-transfer', {})).rejects.toThrow(/transfer id is required/i);
+  it('routes NovaLink Live actions to the client and confines arguments', async () => {
+    // Status is synchronous on the client (returns a snapshot object).
+    const snap = await call('novalinkLive:status');
+    expect(snap.baseUrl).toBe('https://link.test');
+
+    // Boot trims and forwards the base URL. registerIpc only clips whitespace;
+    // the client's `normalizeBaseUrl` is what enforces the http(s) scheme and
+    // strips any trailing slash. The mock sees the value as it left the IPC
+    // layer, not as it will look inside the client.
+    await call('novalinkLive:boot', { baseUrl: '  https://link.test/ ', autoConnect: false });
+    expect(services.novalink.boot).toHaveBeenCalledWith({ baseUrl: 'https://link.test/', autoConnect: false });
+
+    // Login forwards the typed credentials; the token is server-provided and
+    // never returned across IPC.
+    const logged = await call('novalinkLive:login', { username: '  ada  ', password: 'hunter2-hunter2' });
+    expect(logged.user.username).toBe('ada');
+    expect(services.novalink.login).toHaveBeenCalledWith({ username: 'ada', password: 'hunter2-hunter2' });
+
+    // A real UUIDv4 id crosses; a non-UUID is rejected before it reaches the
+    // client, so a malformed renderer call cannot make the client issue a bad
+    // HTTP request.
+    const uuid = '0e62c1e2-3f70-4d05-9c78-8ee4d1a0b111';
+    await call('novalinkLive:getUser', { userId: uuid });
+    expect(services.novalink.getUser).toHaveBeenCalledWith(uuid);
+    await expect(call('novalinkLive:getUser', { userId: 'not-a-uuid' })).rejects.toThrow(/must be a uuid/i);
+    await expect(call('novalinkLive:getUser', {})).rejects.toThrow(/must be a uuid/i);
+
+    // A message body clips to the server's 8000-char ceiling.
+    const long = 'x'.repeat(12_000);
+    await call('novalinkLive:sendMessage', { conversationId: uuid, body: long });
+    const sendArgs = services.novalink.sendMessage.mock.calls.at(-1);
+    expect(sendArgs[0]).toBe(uuid);
+    expect(sendArgs[1].body.length).toBe(8000);
+
+    // Bytes for uploadFile must be a Uint8Array, and are clipped to 25 MB.
+    await call('novalinkLive:uploadFile', { conversationId: uuid, bytes: new Uint8Array([1, 2, 3]), fileName: 'hi.txt' });
+    const upArgs = services.novalink.uploadFile.mock.calls.at(-1);
+    expect(Buffer.isBuffer(upArgs[0].bytes)).toBe(true);
+    expect(upArgs[0].bytes.length).toBe(3);
+    await expect(call('novalinkLive:uploadFile', { conversationId: uuid, bytes: 'not-bytes' })).rejects.toThrow(/Uint8Array/);
+    await expect(call('novalinkLive:uploadFile', { conversationId: uuid, bytes: new Uint8Array(0) })).rejects.toThrow(/empty/i);
+
+    // call.signal frames must use one of the server's five accepted names.
+    await call('novalinkLive:sendCallSignal', { callId: uuid, toUserId: uuid, signal: 'offer', payload: { sdp: 'v=0…', type: 'offer' } });
+    expect(services.novalink.sendCallSignal).toHaveBeenCalledWith({ callId: uuid, toUserId: uuid, signal: 'offer', payload: { sdp: 'v=0…', type: 'offer' } });
+
+    // sendPresence forwards the string as-is; the client enforces the vocabulary.
+    await call('novalinkLive:sendPresence', { status: 'away' });
+    expect(services.novalink.sendPresence).toHaveBeenCalledWith('away');
+    await expect(call('novalinkLive:sendPresence', {})).rejects.toThrow(/presence status is required/i);
+
+    // Reactions need an emoji, and the message id must be a uuid.
+    await expect(call('novalinkLive:addReaction', { messageId: uuid })).rejects.toThrow(/emoji is required/i);
+    await expect(call('novalinkLive:addReaction', { messageId: 'not-uuid', emoji: '👍' })).rejects.toThrow(/must be a uuid/i);
+  });
+
+  // novalinkLive:notify is the ONLY renderer path to an OS-visible toast. Its
+  // handler must shape arguments before Electron's Notification is asked to
+  // render them; the underlying API is not available in a plain Node test
+  // worker, so we assert the shape guard + graceful degradation instead of
+  // the actual click-to-focus round-trip (that path is covered in the
+  // packaged app by an operator running the smoke UI).
+  it('shapes the native notification arguments and degrades when unsupported', async () => {
+    const uuid = '0e62c1e2-3f70-4d05-9c78-8ee4d1a0b111';
+    // Missing title -> rejected before anything touches the Notification API.
+    await expect(call('novalinkLive:notify', { body: 'hi' })).rejects.toThrow(/Notification title is required/i);
+    // Non-string title -> same, because liveStr coerces to '' then throws.
+    await expect(call('novalinkLive:notify', { title: 42, body: 'hi' })).rejects.toThrow(/Notification title is required/i);
+    // Empty title after trim -> rejected.
+    await expect(call('novalinkLive:notify', { title: '   ', body: 'hi' })).rejects.toThrow(/Notification title is required/i);
+    // Valid title but Notification is not present in a Node test worker:
+    // the handler returns `{ ok: false, reason: 'unsupported' }` rather than
+    // throwing, so a renderer that fires a notification on an Electron build
+    // without the API (e.g. headless CI) still gets a resolved promise.
+    const result = await call('novalinkLive:notify', {
+      title: 'New message',
+      body: 'x'.repeat(500),
+      conversationId: uuid,
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'unsupported' });
+    // Body clipping to 200 and title clipping to 80 are enforced by liveStr
+    // BEFORE the unsupported short-circuit — that is what keeps a malicious
+    // renderer from trickling an unbounded string into the OS toast queue.
+    // A supplied conversationId must still be a real uuid; liveOptId treats
+    // `undefined` / `''` as "no conversation" but rejects any other malformed
+    // value, so a bad renderer cannot smuggle a foreign identifier through.
+    await expect(call('novalinkLive:notify', {
+      title: 'ok',
+      body: 'ok',
+      conversationId: 'not-a-uuid',
+    })).rejects.toThrow(/must be a uuid/i);
+    // Omitted conversationId is accepted (undefined short-circuits liveOptId).
+    const noId = await call('novalinkLive:notify', { title: 'ok', body: 'ok' });
+    expect(noId).toMatchObject({ ok: false, reason: 'unsupported' });
   });
 
   it('guard errors propagate with their message', async () => {
@@ -315,5 +435,315 @@ describe('IPC argument contract', () => {
 
     const status = await call('db:status');
     expect(status).toMatchObject({ ready: true, current: 'appdb' });
+  });
+});
+
+/**
+ * Deploy + hosting channels.
+ *
+ * Registered against a second, independent registry because these handlers only
+ * exist when the services are wired: the base 67-channel contract above must
+ * stay exactly as it was, and a missing service must not open a channel.
+ */
+describe('deploy / hosting IPC contract', () => {
+  const hostingStub = () => ({
+    providers: vi.fn(async () => [{ id: 'vercel', available: true }]),
+    connections: vi.fn(async () => [{ provider: 'vercel', connected: true }]),
+    connect: vi.fn(async (payload) => ({ provider: payload.provider, connected: true })),
+    disconnect: vi.fn(async (payload) => ({ ok: true, provider: payload.provider })),
+    teams: vi.fn(async (payload) => ({ provider: payload.provider, teams: [] })),
+    listProjects: vi.fn(async (payload) => [{ id: 'prj_1', teamId: payload.teamId }]),
+    listDeploys: vi.fn(async () => []),
+    domains: vi.fn(async () => ({ domains: [] })),
+    deployLogs: vi.fn(async (payload) => ({ text: 'log', deploymentId: payload.deploymentId })),
+    plan: vi.fn(async (payload) => ({ provider: payload.provider, root: payload.root, rebuild: payload.rebuild })),
+    start: vi.fn(async (payload, emit) => { emit({ type: 'phase' }); return { runId: 'run_1', state: 'queued', ...payload }; }),
+    redeploy: vi.fn(async (payload) => ({ runId: 'run_2', ...payload })),
+    status: vi.fn(async (payload) => ({ runId: payload.runId, state: 'building' })),
+    listRuns: vi.fn(async () => ['run_1']),
+    refresh: vi.fn(async (payload) => ({ runId: payload.runId, state: 'ready' })),
+    cancel: vi.fn(async (payload) => ({ ok: true, runId: payload.runId })),
+    runLogs: vi.fn(async (payload) => ({ runId: payload.runId, text: '' })),
+    historyList: vi.fn(async (payload) => [{ root: payload.root }]),
+    historyClear: vi.fn(async (payload) => ({ ok: payload.confirm, root: payload.root })),
+    getPreferences: vi.fn(async () => ({ provider: 'vercel' })),
+    setPreferences: vi.fn(async (payload) => ({ ...payload })),
+  });
+
+  let hosting;
+  let deploySvc;
+  let previewSvc;
+  let emitted;
+  let map;
+
+  async function register(overrides = {}) {
+    const mod = await import('../electron/ipc/registerIpc');
+    hosting = hostingStub();
+    deploySvc = {
+      detect: vi.fn(async (root) => ({ root, kind: 'node' })),
+      build: vi.fn(async (root, opts) => ({ root, ...opts })),
+      exportBundle: vi.fn(async (root, opts) => ({ root, ...opts })),
+    };
+    previewSvc = {
+      status: vi.fn(async () => ({ running: false })),
+      start: vi.fn(async (payload) => payload),
+      stop: vi.fn(async () => ({ running: false })),
+    };
+    emitted = [];
+    map = new Map();
+    const result = mod.registerIpc({
+      ...services,
+      ...overrides,
+      hosting,
+      deploy: deploySvc,
+      preview: previewSvc,
+      ipcMain: { handle: (channel, fn) => map.set(channel, fn) },
+      emitTo: (senderId, channel) => (payload) => emitted.push({ senderId, channel, payload }),
+    });
+    return result;
+  }
+
+  function fire(channel, ...payload) {
+    const handler = map.get(channel);
+    if (!handler) throw new Error(`Channel not registered: ${channel}`);
+    return handler({ sender: { id: 7 } }, ...payload);
+  }
+
+  it('opens 27 extra channels and only when the services exist', async () => {
+    const result = await register();
+    // 105 base + 27 deploy/hosting channels = 132.
+    expect(result.channelCount).toBe(132);
+    expect(map.size).toBe(132);
+
+    // No services wired -> no deploy/hosting surface at all.
+    const mod = await import('../electron/ipc/registerIpc');
+    const bare = new Map();
+    mod.registerIpc({ ...services, ipcMain: { handle: (c, f) => bare.set(c, f) } });
+    expect(bare.size).toBe(105);
+    expect([...bare.keys()].some((k) => k.startsWith('deploy:'))).toBe(false);
+  });
+
+  // The diagnosis channel is the one place a deploy action can reach a language
+  // model, so it must not exist unless the diagnostics service was wired, and it
+  // must not accept a run id it cannot trust.
+  it('offers the failure diagnosis only when the diagnostics service is wired', async () => {
+    await register();
+    expect(map.has('deploy:diagnose')).toBe(false);
+
+    const diagnose = vi.fn(async ({ runId }) => ({ runId, text: 'Reconnect the account.', hints: [] }));
+    await register({ diagnosis: { diagnose } });
+    expect(map.has('deploy:diagnose')).toBe(true);
+
+    expect(await fire('deploy:diagnose', { runId: 'run_1' })).toMatchObject({ runId: 'run_1' });
+    expect(diagnose).toHaveBeenCalledWith({ runId: 'run_1' });
+    await expect(fire('deploy:diagnose', {})).rejects.toThrow(/run id is required/);
+    await expect(fire('deploy:diagnose', { runId: 'x'.repeat(200) })).rejects.toThrow(/not a valid identifier/);
+  });
+
+  it('routes the local deploy channels and requires a workspace root', async () => {
+    await register();
+    expect(await fire('deploy:detect', 'C:\\w')).toMatchObject({ root: 'C:\\w' });
+    await fire('deploy:build', { root: 'C:\\w', command: 'npm run build', timeoutMs: 60000 });
+    expect(deploySvc.build).toHaveBeenCalledWith('C:\\w', { command: 'npm run build', timeoutMs: 60000 });
+    await fire('deploy:export', { root: 'C:\\w', outputDir: 'dist' });
+    expect(deploySvc.exportBundle).toHaveBeenCalledWith('C:\\w', { outputDir: 'dist' });
+
+    await expect(fire('deploy:detect', '')).rejects.toThrow(/Open a folder first/);
+    await expect(fire('deploy:build', {})).rejects.toThrow(/Open a folder first/);
+    await expect(fire('deploy:export', { outputDir: 'dist' })).rejects.toThrow(/Open a folder first/);
+  });
+
+  it('keeps the preview server channels separate from publishing', async () => {
+    await register();
+    expect(await fire('deploy:previewStatus')).toMatchObject({ running: false });
+    await fire('deploy:previewStart', { root: 'C:\\w', dir: 'dist' });
+    expect(previewSvc.start).toHaveBeenCalledWith({ root: 'C:\\w', dir: 'dist' });
+    await fire('deploy:previewStop');
+    expect(previewSvc.stop).toHaveBeenCalledTimes(1);
+    await expect(fire('deploy:previewStart', { dir: 'dist' })).rejects.toThrow(/Open a folder first/);
+  });
+
+  it('requires a provider name before touching any account', async () => {
+    await register();
+    expect(await fire('deploy:providers')).toEqual([{ id: 'vercel', available: true }]);
+    expect(await fire('deploy:connections')).toEqual([{ provider: 'vercel', connected: true }]);
+    for (const channel of ['deploy:connect', 'deploy:disconnect', 'deploy:teams']) {
+      await expect(fire(channel, {})).rejects.toThrow(/Choose a hosting provider/);
+      await expect(fire(channel, { provider: 42 })).rejects.toThrow(/Choose a hosting provider/);
+    }
+    await expect(fire('deploy:projects', {})).rejects.toThrow(/Choose a hosting provider/);
+    await expect(fire('deploy:plan', { root: 'C:\\w' })).rejects.toThrow(/Choose a hosting provider/);
+    await expect(fire('deploy:plan', { provider: 'vercel' })).rejects.toThrow(/Open a folder first/);
+  });
+
+  it('clips the token and never hands it back to the renderer', async () => {
+    await register();
+    await fire('deploy:connect', { provider: ' vercel ', token: `  ${'t'.repeat(500)}  ` });
+    expect(hosting.connect).toHaveBeenCalledWith({ provider: 'vercel', token: 't'.repeat(400) });
+
+    // A non-string payload cannot smuggle an object into the secret store.
+    await fire('deploy:connect', { provider: 'netlify', token: { a: 1 } });
+    expect(hosting.connect).toHaveBeenLastCalledWith({ provider: 'netlify', token: '' });
+
+    const response = await fire('deploy:connect', { provider: 'vercel', token: 'secret-token' });
+    expect(JSON.stringify(response)).not.toContain('secret-token');
+  });
+
+  it('rejects ids that are not ids, so a path cannot ride a query parameter', async () => {
+    await register();
+    await fire('deploy:projects', { provider: 'vercel', teamId: '  team_1  ' });
+    expect(hosting.listProjects).toHaveBeenCalledWith({ provider: 'vercel', teamId: 'team_1' });
+
+    for (const bad of ['../etc/passwd', 'team 1', 'team;rm', 'a'.repeat(121)]) {
+      await expect(fire('deploy:projects', { provider: 'vercel', teamId: bad })).rejects.toThrow(/not a valid identifier/);
+    }
+    // An over-long id is refused rather than clipped: a truncated team id would
+    // silently deploy to a different account.
+    expect(hosting.listProjects).not.toHaveBeenCalledWith(expect.objectContaining({ teamId: 'a'.repeat(120) }));
+    // Absent and blank both mean "my account", not "undefined string".
+    await fire('deploy:projects', { provider: 'vercel', teamId: '   ' });
+    expect(hosting.listProjects).toHaveBeenLastCalledWith({ provider: 'vercel', teamId: undefined });
+  });
+
+  it('passes provider listing, domains and logs through with validated ids', async () => {
+    await register();
+    await fire('deploy:deploys', { provider: 'netlify', teamId: 'abc', project: 'site_1' });
+    expect(hosting.listDeploys).toHaveBeenCalledWith({ provider: 'netlify', teamId: 'abc', project: 'site_1' });
+    await fire('deploy:domains', { provider: 'vercel', project: 'acme' });
+    expect(hosting.domains).toHaveBeenCalledWith({ provider: 'vercel', teamId: undefined, project: 'acme' });
+    await fire('deploy:providerLogs', { provider: 'vercel', deploymentId: 'dpl_1' });
+    expect(hosting.deployLogs).toHaveBeenCalledWith({
+      provider: 'vercel', teamId: undefined, deploymentId: 'dpl_1', project: undefined,
+    });
+    await expect(fire('deploy:providerLogs', { provider: 'vercel', deploymentId: 'dpl 1' })).rejects.toThrow(/not a valid identifier/);
+  });
+
+  it('only starts a production publish with explicit confirmations', async () => {
+    await register();
+    const base = { root: 'C:\\w', provider: 'vercel' };
+    await fire('deploy:start', base);
+    let args = hosting.start.mock.calls[0][0];
+    expect(args.production).toBe(true); // default branch, must still be confirmed below
+    expect(args.confirmProduction).toBe(false);
+    expect(args.rebuild).toBe(false);
+    expect(args.acknowledgeFrontendOnly).toBe(false);
+    expect(args.confirmBuild).toBe(false);
+    expect(args.envVars).toEqual([]);
+
+    // A truthy-but-not-boolean value is not an approval.
+    await fire('deploy:start', { ...base, confirmProduction: 1, rebuild: 'yes', confirmBuild: 'true' });
+    args = hosting.start.mock.calls[1][0];
+    expect(args.confirmProduction).toBe(false);
+    expect(args.rebuild).toBe(false);
+    expect(args.confirmBuild).toBe(false);
+
+    // Explicitly opting out of production is honoured.
+    await fire('deploy:start', { ...base, production: false, confirmProduction: true });
+    args = hosting.start.mock.calls[2][0];
+    expect(args.production).toBe(false);
+    expect(args.confirmProduction).toBe(true);
+
+    // Free-text settings are clipped, never passed as objects.
+    await fire('deploy:start', { ...base, buildCommand: `  ${'b'.repeat(400)}  `, outputDir: { pwn: true }, teamId: 'team_1' });
+    args = hosting.start.mock.calls[3][0];
+    expect(args.buildCommand).toBe('b'.repeat(300));
+    expect(args.outputDir).toBeUndefined();
+    expect(args.teamId).toBe('team_1');
+  });
+
+  it('sanitises environment variables without rewriting their case', async () => {
+    await register();
+    await fire('deploy:start', {
+      root: 'C:\\w',
+      provider: 'vercel',
+      envVars: [
+        { key: ' API_URL ', value: 'https://api.example.com' },
+        { key: 'connectionString', value: 'postgres://x' },
+        { key: 'NO_VALUE', value: '' },
+        { key: 'BAD-NAME', value: 'v' },
+        { key: '9LEADING', value: 'v' },
+        { key: 42, value: 'v' },
+        'not-an-object',
+        { key: 'OK2', value: 7 },
+      ],
+    });
+    const args = hosting.start.mock.calls[0][0];
+    // Hosts treat env names case-sensitively, so a lowercase name the app really
+    // reads must survive instead of being silently uppercased.
+    expect(args.envVars).toEqual([
+      { key: 'API_URL', value: 'https://api.example.com' },
+      { key: 'connectionString', value: 'postgres://x' },
+    ]);
+
+    // A caller cannot push an unbounded list into the provider API.
+    await fire('deploy:start', {
+      root: 'C:\\w', provider: 'vercel',
+      envVars: Array.from({ length: 200 }, (_, i) => ({ key: `V${i}`, value: 'x' })),
+    });
+    expect(hosting.start.mock.calls[1][0].envVars).toHaveLength(50);
+  });
+
+  it('streams run events back to the window that started them', async () => {
+    await register();
+    const run = await fire('deploy:start', { root: 'C:\\w', provider: 'vercel' });
+    expect(run).toMatchObject({ runId: 'run_1' });
+    expect(emitted).toEqual([{ senderId: 7, channel: 'deploy:event', payload: { type: 'phase' } }]);
+
+    emitted.length = 0;
+    await fire('deploy:redeploy', { root: 'C:\\w', provider: 'vercel' });
+    expect(hosting.redeploy).toHaveBeenCalledWith(expect.objectContaining({ root: 'C:\\w' }), expect.any(Function));
+    expect(emitted).toHaveLength(0);
+  });
+
+  it('requires a well-formed run id for every run channel', async () => {
+    await register();
+    for (const channel of ['deploy:status', 'deploy:refresh', 'deploy:cancel', 'deploy:runLogs']) {
+      await expect(fire(channel, {})).rejects.toThrow(/deployment run id is required/i);
+      await expect(fire(channel, { runId: 'run/../x' })).rejects.toThrow(/not a valid identifier/);
+    }
+    expect(await fire('deploy:status', { runId: 'run_1' })).toMatchObject({ runId: 'run_1' });
+    expect(await fire('deploy:runs')).toEqual(['run_1']);
+    expect(await fire('deploy:cancel', { runId: 'run_1' })).toMatchObject({ ok: true });
+  });
+
+  it('gates history clearing on an explicit confirm', async () => {
+    await register();
+    await fire('deploy:history', { root: 'C:\\w' });
+    expect(hosting.historyList).toHaveBeenCalledWith({ root: 'C:\\w' });
+
+    await fire('deploy:historyClear', { root: 'C:\\w' });
+    expect(hosting.historyClear).toHaveBeenCalledWith({ root: 'C:\\w', confirm: false });
+
+    await fire('deploy:historyClear', { root: 'C:\\w', confirm: true });
+    expect(hosting.historyClear).toHaveBeenLastCalledWith({ root: 'C:\\w', confirm: true });
+
+    // No root means "no workspace": the service decides, but nothing crashes.
+    await fire('deploy:history', {});
+    expect(hosting.historyList).toHaveBeenLastCalledWith({ root: '' });
+  });
+
+  it('stores preferences without trusting the renderer types', async () => {
+    await register();
+    expect(await fire('deploy:preferences')).toEqual({ provider: 'vercel' });
+    await fire('deploy:setPreferences', { provider: ' netlify ', teamId: 'team_1' });
+    expect(hosting.setPreferences).toHaveBeenCalledWith({ provider: 'netlify', teamId: 'team_1' });
+    await fire('deploy:setPreferences', { provider: 9, teamId: '   ' });
+    expect(hosting.setPreferences).toHaveBeenLastCalledWith({ provider: '', teamId: undefined });
+    await expect(fire('deploy:setPreferences', { provider: 'vercel', teamId: 'bad id!' })).rejects.toThrow(/not a valid identifier/);
+  });
+
+  it('does not register hosting channels when the service is absent', async () => {
+    await register();
+    const mod = await import('../electron/ipc/registerIpc');
+    const onlyDeploy = new Map();
+    mod.registerIpc({
+      ...services,
+      deploy: deploySvc,
+      ipcMain: { handle: (c, f) => onlyDeploy.set(c, f) },
+    });
+    expect(onlyDeploy.size).toBe(108);
+    expect(onlyDeploy.has('deploy:detect')).toBe(true);
+    expect(onlyDeploy.has('deploy:start')).toBe(false);
+    expect(onlyDeploy.has('deploy:connections')).toBe(false);
   });
 });

@@ -647,3 +647,633 @@
   font-size: 0.88rem;
   padding: 0.55rem 0.95rem;
 }
+
+/* ==========================================================================
+   NovaLink Live chat workspace — the real messenger surface.
+   --------------------------------------------------------------------------
+   Class names here are prefixed .novalink- (not .nl-) to keep them clearly
+   separated from the deleted LAN styles above. All colors come from the
+   tokens in variables.css / themes.css so the whole workspace re-skins with
+   the app. Motion respects .reduce-animations through animations.css.
+   ========================================================================== */
+
+/* --- Root panel shell ----------------------------------------------------- */
+.novalink-live {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--panel);
+}
+.novalink-live-error {
+  margin: 0;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.78rem;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--surface-2));
+  border-bottom: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+}
+
+/* --- Auth screen ---------------------------------------------------------- */
+.novalink-auth {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background:
+    radial-gradient(120% 100% at 20% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    var(--panel);
+}
+.novalink-auth-card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.4rem 1.5rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  animation: nl-card-in var(--dur-slow) var(--ease-out) both;
+}
+.novalink-auth-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.novalink-auth-subtitle { margin: 0; color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+.novalink-auth-tabs {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.novalink-auth-tab {
+  flex: 1;
+  padding: 0.45rem 0.7rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.novalink-auth-tab.active {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.novalink-auth-form { display: flex; flex-direction: column; gap: 0.65rem; }
+.novalink-auth-form .field { display: flex; flex-direction: column; gap: 0.22rem; }
+.novalink-auth-form .field span { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.novalink-auth-form input {
+  padding: 0.55rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.88rem;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.novalink-auth-form input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+.novalink-auth-form .primary {
+  margin-top: 0.35rem;
+  padding: 0.6rem 0.9rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-gradient);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.novalink-auth-form .primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.novalink-auth-error {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--surface-2));
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-sm);
+}
+
+/* --- Workspace layout ----------------------------------------------------- */
+.novalink-workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 900px) {
+  .novalink-workspace { grid-template-columns: 1fr; }
+  .novalink-side { display: none; }
+}
+.novalink-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+}
+
+/* --- Conversation sidebar ------------------------------------------------- */
+.novalink-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  overflow: hidden;
+}
+.novalink-side-head {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.novalink-side-search {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.novalink-side-search:focus { outline: none; border-color: var(--accent-line); box-shadow: var(--focus-ring); }
+.novalink-side-new {
+  flex: none;
+  width: 30px; height: 30px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.novalink-side-new:hover { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); }
+.novalink-side-list {
+  flex: 1;
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.novalink-side-empty { padding: 1rem 0.75rem; color: var(--muted); font-size: 0.78rem; text-align: center; }
+.novalink-side-row {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.novalink-side-row:hover { background: var(--surface-2); }
+.novalink-side-row.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.novalink-side-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.novalink-side-title {
+  display: flex; align-items: center; gap: 0.35rem;
+  font-size: 0.85rem; font-weight: 650;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.novalink-side-snippet {
+  font-size: 0.75rem;
+  color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.novalink-side-time { font-size: 0.68rem; color: var(--faint); align-self: flex-start; padding-top: 0.25rem; }
+.novalink-unread-pill {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* --- Avatar + presence dot ------------------------------------------------ */
+.novalink-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 36px; height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.78rem;
+  box-shadow: var(--shadow-sm);
+}
+.novalink-avatar-initials { letter-spacing: 0.02em; }
+.novalink-presence-dot {
+  position: absolute;
+  right: -2px; bottom: -2px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  background: var(--faint);
+}
+.novalink-presence-dot.tone-on { background: var(--ok); }
+.novalink-presence-dot.tone-warn { background: var(--warn); }
+.novalink-presence-dot.tone-err { background: var(--info); }
+.novalink-presence-dot.tone-off { background: var(--faint); }
+
+/* --- Thread --------------------------------------------------------------- */
+.novalink-thread {
+  flex: 1;
+  padding: 0.85rem 1.15rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--panel);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.novalink-thread::-webkit-scrollbar { width: 10px; }
+.novalink-thread::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.novalink-thread-empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.novalink-thread-head {
+  padding: 0 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.4rem;
+}
+.novalink-thread-head h3 { margin: 0; font-size: 0.95rem; }
+.novalink-thread-empty-hint { color: var(--muted); text-align: center; padding: 2rem 0; }
+.novalink-day {
+  align-self: center;
+  margin: 0.7rem 0 0.4rem;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+
+.novalink-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: min(720px, 78%);
+  padding: 0.45rem 0.7rem 0.35rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  animation: nl-msg-in var(--dur-base) var(--ease-out) both;
+}
+.novalink-bubble.own {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  border-bottom-right-radius: var(--radius-xs);
+}
+.novalink-bubble.peer { align-self: flex-start; border-bottom-left-radius: var(--radius-xs); }
+.novalink-bubble.kind-code { max-width: min(900px, 92%); padding-right: 0.55rem; }
+.novalink-bubble-head {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.novalink-bubble-sender { font-weight: 650; color: var(--text); }
+.novalink-bubble-time { font-variant-numeric: tabular-nums; }
+.novalink-bubble-body {
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.novalink-bubble-attachments { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.35rem; }
+.novalink-bubble-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  justify-content: flex-end;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.novalink-bubble-edited { color: var(--faint); font-style: italic; }
+.novalink-bubble-deleted { color: var(--muted); font-style: italic; }
+.novalink-tick { font-size: 0.7rem; }
+.novalink-tick.pending { color: var(--warn); }
+.novalink-tick.sent { color: var(--muted); }
+.novalink-tick.delivered { color: var(--ok); }
+.novalink-tick.read { color: var(--info); }
+.novalink-tick.failed { color: var(--error); font-weight: 700; }
+
+.novalink-reactions { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.novalink-reaction {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  font-size: 0.72rem;
+}
+.novalink-reaction .count { color: var(--muted); font-size: 0.65rem; margin-left: 0.15rem; }
+
+.novalink-typing {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+}
+.novalink-typing-dots { display: inline-flex; gap: 0.15rem; }
+.novalink-typing-dots i {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: nl-typing-bounce 1.2s var(--ease-in-out) infinite;
+}
+.novalink-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.novalink-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes nl-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+.reduce-animations .novalink-typing-dots i { animation: none; opacity: 0.7; }
+
+/* --- Composer ------------------------------------------------------------- */
+.novalink-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.85rem 0.85rem;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.novalink-composer.disabled { opacity: 0.6; }
+.novalink-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+.novalink-composer-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+.novalink-composer-input {
+  flex: 1;
+  min-width: 0;
+  max-height: 180px;
+  padding: 0.55rem 0.75rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  resize: none;
+}
+.novalink-composer-input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+.novalink-composer-actions { display: flex; gap: 0.35rem; align-items: center; }
+.novalink-composer-actions .primary {
+  padding: 0.5rem 0.85rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-gradient);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.novalink-composer-actions .primary:disabled { opacity: 0.55; cursor: not-allowed; }
+.novalink-composer-warn { margin: 0; font-size: 0.72rem; color: var(--warn); }
+
+/* --- File chip ------------------------------------------------------------ */
+.novalink-attachment {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  font-size: 0.78rem;
+  max-width: 320px;
+}
+.novalink-attachment.in-flight { border-color: var(--accent-line); }
+.novalink-attachment-icon {
+  width: 24px; height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+.novalink-attachment-icon.tone-image { background: color-mix(in srgb, var(--info) 22%, var(--surface-3)); }
+.novalink-attachment-icon.tone-code { background: color-mix(in srgb, var(--accent) 22%, var(--surface-3)); }
+.novalink-attachment-icon.tone-archive { background: color-mix(in srgb, var(--warn) 22%, var(--surface-3)); }
+.novalink-attachment-icon.tone-pdf { background: color-mix(in srgb, var(--error) 22%, var(--surface-3)); }
+.novalink-attachment-body { display: flex; flex-direction: column; gap: 0.05rem; min-width: 0; }
+.novalink-attachment-name {
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.novalink-attachment-meta { font-size: 0.68rem; color: var(--muted); }
+
+/* --- Code snippet block --------------------------------------------------- */
+.novalink-code-block {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.novalink-code-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.28rem 0.55rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+}
+.novalink-code-lang {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.62rem;
+}
+.novalink-code-path { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+.novalink-code-block .spacer { flex: 1; }
+.novalink-code-body { min-height: 60px; }
+.novalink-code-body.clip { max-height: 240px; overflow: hidden; }
+
+/* --- User directory modal ------------------------------------------------- */
+.novalink-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  animation: nl-card-in var(--dur-fast) var(--ease-out) both;
+}
+.novalink-modal {
+  width: min(520px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.novalink-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.novalink-modal-head h3 { margin: 0; font-size: 0.95rem; }
+.novalink-modal-body {
+  padding: 0.7rem 0.9rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow-y: auto;
+}
+.novalink-modal-search {
+  padding: 0.45rem 0.65rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.novalink-modal-error { color: var(--error); font-size: 0.78rem; }
+.novalink-modal-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.novalink-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.novalink-modal-row-body { display: flex; flex-direction: column; min-width: 0; }
+.novalink-modal-name { font-weight: 650; font-size: 0.85rem; }
+.novalink-modal-handle { color: var(--muted); font-size: 0.72rem; font-family: var(--font-mono); }
+
+/* --- Diagnostics panel ---------------------------------------------------- */
+.novalink-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem 1.2rem;
+  border-top: 1px dashed var(--border-strong);
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg));
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.novalink-diag-head h3 { margin: 0 0 0.25rem; font-size: 0.9rem; }
+.novalink-diag-row { display: flex; align-items: center; gap: 0.55rem; font-size: 0.78rem; padding: 0.15rem 0; }
+.novalink-diag-dot { width: 8px; height: 8px; border-radius: 50%; }
+.novalink-diag-label { color: var(--muted); flex: 0 0 110px; }
+.novalink-diag-value { color: var(--text); font-family: var(--font-mono); overflow-wrap: anywhere; }
+.novalink-diag-controls .field { display: flex; flex-direction: column; gap: 0.22rem; }
+.novalink-diag-controls .field span { font-size: 0.68rem; text-transform: uppercase; color: var(--muted); }
+.novalink-diag-controls input {
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.novalink-diag-buttons { display: flex; gap: 0.35rem; margin-top: 0.35rem; flex-wrap: wrap; }
+.novalink-diag-stream h4 { margin: 0 0 0.35rem; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.novalink-diag-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.4rem 0.55rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+.novalink-diag-event { display: flex; gap: 0.5rem; }
+.novalink-diag-event .time { color: var(--faint); flex: none; }

@@ -1,8 +1,8 @@
 /**
  * Deploy — build & ship the opened project from inside NovaCode.
  *
- * A guided front-end over three real, workspace-confined operations backed by
- * the main process (client.deployDetect / deployBuild / deployExport and the
+ * A guided front-end over real, workspace-confined operations backed by the
+ * main process (client.deployDetect / deployBuild / deployExport and the
  * loopback preview server):
  *   1. Detect   — read package.json / index.html and infer the build command,
  *                 package manager and static output folder.
@@ -10,14 +10,16 @@
  *   3. Preview  — serve the built folder on http://127.0.0.1:<port> and open it.
  *   4. Export   — copy the build output to `.novacode/deploy/` as a portable
  *                 static bundle.
+ *   5. Publish  — the DeployPublish panel: connect your own Vercel or Netlify
+ *                 account, review the settings, and run a real deployment that
+ *                 ends in a provider-confirmed public URL.
  *
- * Publishing to a real host (Vercel / Netlify / GitHub Pages / S3) is surfaced
- * as ready-to-run terminal commands rather than baked in: those need third-party
- * CLIs and the user's own account token, which we never store or embed. The
- * component stays presentational — no Node, fs, or child_process here.
+ * The component stays presentational — no Node, fs, child_process, or provider
+ * credential ever lives here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client, isDesktop, toUserMessage } from '../services/novaClient';
+import DeployPublish from './DeployPublish';
 import { RocketIcon, PlayIcon, RefreshIcon, TrashIcon } from './Icons';
 
 function formatBytes(n) {
@@ -29,11 +31,10 @@ function formatBytes(n) {
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-// Copy-paste publish recipes. Each is just a command to run in the terminal
-// (or the Agent) — NovaCode does not execute or authorize them for you.
-const PROVIDERS = [
-  { id: 'vercel', label: 'Vercel', command: 'npx vercel --prod', note: 'Links to your Vercel account on first run.' },
-  { id: 'netlify', label: 'Netlify', command: 'npx netlify deploy --build --prod', note: 'Needs a netlify.toml with the build output.' },
+// Hosts NovaCode does not drive itself, kept as copy-paste recipes for the
+// terminal. Vercel and Netlify are gone from this list because they are real
+// integrations now — see DeployPublish.
+const CLI_RECIPES = [
   { id: 'gh-pages', label: 'GitHub Pages', command: 'npx gh-pages -d dist', note: 'Pushes the output folder to the gh-pages branch.' },
   { id: 'surge', label: 'Surge', command: 'npx surge ./dist', note: 'Static hosting with a free *.surge.sh domain.' },
 ];
@@ -184,9 +185,30 @@ export default function DeployView({ root, onNotify, asTab = false }) {
                 <dt>Output folder</dt>
                 <dd>{profile.outputDir || '—'} {profile.outputExists ? <span className="dp-tag ok">exists</span> : <span className="dp-tag">missing</span>}</dd>
               </div>
+              <div>
+                <dt>Deploy mode</dt>
+                <dd>
+                  {profile.deployMode === 'provider-build' ? 'host builds from your source'
+                    : profile.deployMode === 'unsupported' ? 'not deployable here'
+                      : 'upload the build output'}
+                </dd>
+              </div>
+              {profile.backend?.detected && (
+                <div>
+                  <dt>Server code</dt>
+                  <dd>
+                    {profile.frontendOnly
+                      ? <span className="dp-tag warn">would be left behind</span>
+                      : <span className="dp-tag ok">deployed by the host</span>}
+                  </dd>
+                </div>
+              )}
             </dl>
           ) : (
             <p className="dp-muted">{hasRoot && isDesktop ? 'Detecting…' : 'Nothing detected yet.'}</p>
+          )}
+          {profile?.blockers?.length > 0 && (
+            <ul className="dp-blockers">{profile.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
           )}
           {profile?.warnings?.length > 0 && (
             <ul className="dp-warnings">{profile.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
@@ -259,15 +281,18 @@ export default function DeployView({ root, onNotify, asTab = false }) {
           </div>
         </section>
 
-        {/* ---- publish to a real host (transparent commands) ---- */}
+        {/* ---- publish to a real host (Vercel / Netlify) ---- */}
+        <DeployPublish root={root} buildCommand={buildCommand} outputDir={outputDir} onNotify={onNotify} />
+
+        {/* ---- other hosts, as transparent commands ---- */}
         <section className="dp-card dp-providers">
-          <div className="dp-card-head"><span className="dp-step">5</span> Publish to a host</div>
+          <div className="dp-card-head"><span className="dp-step">6</span> Other hosts</div>
           <p className="dp-muted">
-            NovaCode builds and previews locally. Actual hosting is done by the provider&apos;s own CLI with
-            <em> your</em> account token — we never store or embed credentials. Run any of these in the terminal:
+            NovaCode drives Vercel and Netlify directly. For these hosts it stays transparent and hands you the
+            command to run in the terminal with <em>your</em> account:
           </p>
           <ul className="dp-provider-list">
-            {PROVIDERS.map((p) => (
+            {CLI_RECIPES.map((p) => (
               <li key={p.id} className="dp-provider">
                 <div className="dp-provider-head">
                   <span className="dp-provider-name">{p.label}</span>

@@ -45,12 +45,38 @@ what it can do:
    redaction of key/token/password patterns.
 9. **Single instance** — `requestSingleInstanceLock` prevents
    multi-instance races; child terminal processes are killed on quit.
+10. **Hosting credentials** — Vercel and Netlify access tokens live in the
+    same encrypted store as AI keys (`hosting-<provider>-token`). They are
+    read inside the main process immediately before a provider call and are
+    never returned over IPC, written to settings, or printed. A revoked or
+    wrong token is reported as a failed connection, never as a connected
+    account.
+11. **Deploy diagnosis** — the "Explain this failure" button is the only
+    deployment action that can reach a language model, and it runs only when
+    clicked. Evidence (run state, counts, the tail of the local and host
+    logs) is masked for bearer headers, known token prefixes, private-key
+    blocks, signed URLs and `*SECRET=*` pairs before it becomes prompt text,
+    and the stored access token is passed as a never-send literal. The
+    model's answer is masked again before it is displayed. Nothing is
+    uploaded when no assistant is configured: the same evidence is matched
+    against built-in failure causes, and the panel labels which route was
+    used.
+12. **Project build scripts** — a deploy can run the project's own
+    `build` script. That child process is given the environment with the
+    hosting tokens removed, so a repository cannot read the credential that
+    publishes it. The interactive terminal is **not** filtered: it is your
+    own shell, and you can already read your own environment there.
 
 ## What NovaCode deliberately does NOT sandbox
 
 Running a command in the integrated terminal (or the AI applying an edit
 you approved) executes **on your machine with your user permissions**.
 NovaCode warns about this. Do not run untrusted project code.
+
+A deployment build is the one project script NovaCode runs on its own
+initiative, so it is gated: the Deploy panel shows the exact command and
+requires your approval before executing it, and the child process does not
+see your hosting tokens (see item 12 above).
 
 ## Known limitations (honest list)
 
@@ -60,6 +86,11 @@ NovaCode warns about this. Do not run untrusted project code.
 - The CSP allows `unsafe-inline` styles (required by Monaco).
 - Language servers, Git integration, and plugin sandboxing are not yet
   implemented (see ROADMAP.md).
+- The publish path has been verified against the real Vercel and Netlify
+  APIs only for **rejection** (an invalid token is refused, an unreachable
+  API is reported as a failure). No successful deployment has been executed
+  end to end from this build, so the happy path is covered by tests with a
+  simulated provider rather than by a live host.
 
 ## Reporting a vulnerability
 

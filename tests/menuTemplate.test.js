@@ -76,6 +76,19 @@ describe('buildMenuTemplate', () => {
     }
   });
 
+  it('offers a working Deploy entry instead of a placeholder', () => {
+    // The deploy workspace is a real integration now, so it must be reachable from
+    // the native menu with a live accelerator and a registered command id.
+    const deploy = items.find((item) => item.label === 'Deploy');
+    expect(deploy).toBeDefined();
+    expect(deploy.enabled).not.toBe(false);
+    expect(deploy.accelerator).toBe('CmdOrCtrl+Shift+B');
+    dispatched.length = 0;
+    deploy.click();
+    expect(dispatched).toEqual(['view.deploy']);
+    expect(MENU_COMMANDS).toContain('view.deploy');
+  });
+
   it('exposes editor action ids used by the renderer', () => {
     expect(EDITOR_ACTIONS.find.command).toBe('editor.find');
     expect(EDITOR_ACTIONS['goto-definition'].command).toBe('editor.goto-definition');

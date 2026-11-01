@@ -14,6 +14,8 @@ const THEMES = ['dark', 'light', 'high-contrast', 'dragon', 'flowers', 'ocean', 
 const LINE_NUMBERS = ['on', 'off', 'relative'];
 const CURSOR_BLINKING = ['smooth', 'blink', 'phase', 'solid'];
 const RENDER_WHITESPACE = ['none', 'all', 'selection', 'boundary', 'trailing'];
+// Hosting providers that are actually wired up (see deploy/providers/index.js).
+const DEPLOY_PROVIDERS = ['vercel', 'netlify'];
 
 const DEFAULTS = {
   theme: 'dark',
@@ -48,6 +50,12 @@ const DEFAULTS = {
     // the assistant provider/model above.
     inlineProvider: '',
     inlineModel: '',
+  },
+  // Deployment preferences. Team ids only — hosting credentials are secrets and
+  // live in secretStore, never here.
+  deploy: {
+    provider: '',
+    teams: {},
   },
 };
 
@@ -106,6 +114,17 @@ function sanitize(patch) {
       inlineModel: String(patch.ai.inlineModel ?? DEFAULTS.ai.inlineModel).slice(0, 120),
     };
   }
+  if (patch.deploy !== undefined && typeof patch.deploy === 'object') {
+    const teams = patch.deploy.teams && typeof patch.deploy.teams === 'object' ? patch.deploy.teams : {};
+    next.deploy = {
+      // An empty value means "ask me which host every time", which is the safe
+      // default; only a provider we actually implement can be pre-selected.
+      provider: DEPLOY_PROVIDERS.includes(patch.deploy.provider) ? patch.deploy.provider : '',
+      teams: Object.fromEntries(Object.entries(teams)
+        .filter(([key]) => DEPLOY_PROVIDERS.includes(key))
+        .map(([key, value]) => [key, String(value ?? '').slice(0, 80)])),
+    };
+  }
   return next;
 }
 
@@ -138,6 +157,7 @@ function mergeDefaults(stored) {
     ...stored,
     layout: { ...DEFAULTS.layout, ...(stored.layout || {}) },
     ai: { ...DEFAULTS.ai, ...storedAi },
+    deploy: { ...DEFAULTS.deploy, ...(stored.deploy || {}) },
   };
 }
 

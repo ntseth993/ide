@@ -10,6 +10,8 @@ import {
   profilesFor,
   resolveShell,
   pickShell,
+  childEnv,
+  CHILD_ENV_DENYLIST,
 } from '../electron/services/terminalService';
 
 const logger = { info: () => {}, warn: () => {}, error: () => {} };
@@ -98,4 +100,51 @@ describe('terminalService.runCapture', () => {
     expect(res.timedOut).toBe(true);
     expect(res.error).toMatch(/timed out/i);
   }, 15000);
+
+  it('strips hosting credentials from a project build script, and nothing else', async () => {
+    // A deploy runs `npm run build` through this very function, so untrusted
+    // project code must not be able to read the token that publishes it — while a
+    // legitimate variable the developer set still reaches their tooling.
+    const keep = `nova-keep-${process.pid}`;
+    const term = makeService();
+    process.env.VERCEL_TOKEN = 'must-not-reach-the-project';
+    process.env.NETLIFY_TOKEN = 'must-not-reach-the-project-either';
+    process.env.NOVA_PROBE_KEEP = keep;
+    try {
+      const probe = process.platform === 'win32'
+        ? 'Write-Output ("VERCEL[" + $env:VERCEL_TOKEN + "] NETLIFY[" + $env:NETLIFY_TOKEN + "] KEEP[" + $env:NOVA_PROBE_KEEP + "]")'
+        : 'echo "VERCEL[$VERCEL_TOKEN] NETLIFY[$NETLIFY_TOKEN] KEEP[$NOVA_PROBE_KEEP]"';
+      const res = await term.runCapture({ root: os.tmpdir(), command: probe });
+      expect(res.code).toBe(0);
+      expect(res.output).toContain('VERCEL[]');
+      expect(res.output).toContain('NETLIFY[]');
+      expect(res.output).toContain(`KEEP[${keep}]`);
+      expect(res.output).not.toContain('must-not-reach-the-project');
+    } finally {
+      delete process.env.VERCEL_TOKEN;
+      delete process.env.NETLIFY_TOKEN;
+      delete process.env.NOVA_PROBE_KEEP;
+    }
+  }, 20000);
+});
+
+describe('childEnv', () => {
+  it('removes every known hosting credential and leaves the rest alone', () => {
+    const base = {
+      PATH: '/usr/bin',
+      HOME: '/home/dev',
+      NOVA_UNRELATED: 'keep me',
+      ...Object.fromEntries(CHILD_ENV_DENYLIST.map((name) => [name, 'secret'])),
+    };
+    const env = childEnv(base);
+    for (const name of CHILD_ENV_DENYLIST) expect(env[name]).toBeUndefined();
+    expect(env.PATH).toBe('/usr/bin');
+    expect(env.NOVA_UNRELATED).toBe('keep me');
+    // The caller's object must not be mutated: process.env is shared.
+    expect(base.VERCEL_TOKEN).toBe('secret');
+  });
+
+  it('covers both implemented providers by name', () => {
+    expect(CHILD_ENV_DENYLIST).toEqual(expect.arrayContaining(['VERCEL_TOKEN', 'NETLIFY_TOKEN']));
+  });
 });

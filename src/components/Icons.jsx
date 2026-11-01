@@ -293,3 +293,19 @@ export const RocketIcon = (props) => (
     <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
   </Svg>
 );
+
+/* A live website — used for the public URL a provider confirmed. */
+export const GlobeIcon = (props) => (
+  <Svg {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
+  </Svg>
+);
+
+/* Open in the default browser (arrow leaving a box). */
+export const ExternalLinkIcon = (props) => (
+  <Svg {...props}>
+    <path d="M14 4h6v6M20 4l-9 9" />
+    <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+  </Svg>
+);

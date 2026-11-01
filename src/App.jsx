@@ -871,6 +871,69 @@ export default function App() {
     return { text, language: model.getLanguageId?.() || '', path };
   }, []);
 
+  // Chat code-snip open-in-editor: NovaLink's CodeSnippet dispatches this when
+  // the user clicks "Open in editor". We create the file inside the workspace
+  // (never overwrite an existing path silently), then open the newly created
+  // file as an editor tab. In web preview mode with no workspace we surface a
+  // clear error so the user knows to open a folder first.
+  useEffect(() => bus.subscribe('novalink:openInEditor', async (payload) => {
+    const name = String(payload?.name || '').trim();
+    const content = typeof payload?.content === 'string' ? payload.content : '';
+    if (!name) {
+      notify('NovaLink snippet is missing a filename.', 'error');
+      return;
+    }
+    if (!workspaceRoot) {
+      notify('Open a folder before exporting a NovaLink snippet.', 'error');
+      return;
+    }
+    const targetPath = joinPath(workspaceRoot, name);
+    const write = async () => {
+      try {
+        await client.writeFile(workspaceRoot, targetPath, content);
+        await refreshTree(workspaceRoot);
+        await openFile(targetPath);
+        notify(`NovaLink snippet exported to ${name}`);
+      } catch (error) {
+        notify(toUserMessage(error, 'Could not export NovaLink snippet.'), 'error');
+      }
+    };
+    try {
+      // Read first; if the file exists we ask before clobbering, matching the
+      // spec rule "never overwrite project files without explicit confirmation".
+      await client.readFile(workspaceRoot, targetPath);
+      setConfirmState({
+        title: 'Overwrite existing file?',
+        message: `${name} already exists in the workspace. Replace its contents with the NovaLink snippet?`,
+        confirmLabel: 'Overwrite',
+        onSubmit: () => { setConfirmState(null); write(); },
+      });
+    } catch {
+      // readFile throwing means the file does not exist yet — safe to create.
+      await write();
+    }
+  }), [notify, openFile, refreshTree, workspaceRoot]);
+
+  // Notification click: main process fires this when the user hits a toast.
+  // We open the NovaLink tab so the store-driven active conversation the
+  // Root already set becomes visible.
+  useEffect(() => client.onNovaLinkLiveOpenConversation?.(() => {
+    setSpecialTab('novalink');
+  }), []);
+
+  // Auto-open NovaLink on first `ready` after sign-in when the setting is on.
+  // Default off — an IDE should not yank a tab open under the user unless
+  // they asked for it.
+  useEffect(() => {
+    if (!settings.novalink?.autoOpen) return undefined;
+    const unsubscribe = client.onNovaLinkLiveStatus((snap) => {
+      if (snap?.ready && snap?.signedIn) {
+        setSpecialTab((current) => current || 'novalink');
+      }
+    });
+    return () => { try { unsubscribe?.(); } catch { /* noop */ } };
+  }, [settings.novalink?.autoOpen]);
+
   // ---- commands & hotkeys ----------------------------------------------------------
   // Switching theme also adopts that theme accent, which is what makes a
   // "Dragon" or "Flowers" switch feel complete; the accent stays editable after.
@@ -955,7 +1018,7 @@ export default function App() {
       { id: 'view.extensions', label: 'View: Extensions', hint: 'Ctrl+Shift+X', run: () => { setLeftView('extensions'); setSidebarVisible(true); } },
       { id: 'view.novalink', label: 'View: NovaLink (peer collaboration)', hint: 'Ctrl+Shift+L', run: openNovaLink },
       { id: 'view.novadb', label: 'View: Database (NovaDB)', hint: 'Ctrl+Shift+D', run: openNovaDb },
-      { id: 'view.deploy', label: 'View: Deploy (build & preview project)', hint: 'Ctrl+Shift+B', run: openDeploy },
+      { id: 'view.deploy', label: 'View: Deploy (publish to Vercel or Netlify)', hint: 'Ctrl+Shift+B', run: openDeploy },
       { id: 'toggle-terminal', label: 'View: Toggle Terminal', hint: 'Ctrl+`', run: () => setLayout({ terminalVisible: !layout.terminalVisible }) },
       { id: 'view.terminal', label: 'View: Terminal', run: () => setLayout({ terminalVisible: true }) },
       {

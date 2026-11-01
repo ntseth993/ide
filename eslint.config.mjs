@@ -56,6 +56,38 @@ export default [
     },
   },
   {
+    // NovaLink Live server: a standalone, dependency-free Node service that is
+    // never bundled with the app, so it gets Node globals (Buffer, setTimeout,
+    // module) rather than the renderer's browser ones, and its logger is allowed
+    // to write to the console like any other server process.
+    files: ['link-server/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      // `const { endReason, ...call } = row` is how this server leaves a field out
+      // of an event, so the omitted name is not an unused variable.
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
+      'no-console': 'off',
+    },
+  },
+  {
+    // Command-line tools run by a developer, never by the app: Node CommonJS,
+    // console is the only output channel they have.
+    files: ['scripts/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-console': 'off',
+    },
+  },
+  {
     files: ['tests/**/*.{js,jsx}', 'vite.config.js', 'eslint.config.mjs'],
     plugins: {
       react: reactPlugin,

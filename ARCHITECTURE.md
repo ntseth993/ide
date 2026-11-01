@@ -62,6 +62,12 @@ for HMR).
 - Secrets: API keys are encrypted with `safeStorage` (DPAPI/Keychain/
   libsecret) inside userData; the renderer can set/clear/check a key but
   never reads it back. AI network calls happen only in the main process
+- Hosting tokens (`hosting-vercel-token`, `hosting-netlify-token`) use the
+  same encrypted store and the same one-way rule: they are read inside the
+  main process immediately before a provider call and never cross IPC
+- Project scripts run for a deployment (`npm run build`) inherit the
+  environment with the hosting tokens stripped, so the code being published
+  cannot read the credential that publishes it
 - Outbound `shell.openExternal` allows only `http(s)`; in-window
   navigation away from our own origins is blocked
 - Structured JSON logs in `userData/logs/` with secret redaction
@@ -82,6 +88,10 @@ for HMR).
 | `ai:event` | event | `{ runId, type: start\|delta\|error\|done, data }` |
 | `shell:open-external` | invoke | http(s) links only |
 | `app:info` | invoke | versions/platform |
+| `deploy:detect` `deploy:build` `deploy:export` `deploy:preview-*` | invoke | local build and preview of the opened folder |
+| `deploy:providers` `deploy:connections` `deploy:connect` `deploy:disconnect` `deploy:teams` `deploy:projects` `deploy:deploys` `deploy:domains` `deploy:providerLogs` | invoke | hosting account and project reads (no credential ever returned) |
+| `deploy:plan` `deploy:start` `deploy:redeploy` `deploy:status` `deploy:runs` `deploy:refresh` `deploy:cancel` `deploy:runLogs` `deploy:diagnose` `deploy:history` `deploy:historyClear` `deploy:preferences` `deploy:setPreferences` | invoke | the publish pipeline and its history |
+| `deploy:event` | event | `{ runId, type: start\|phase\|state\|progress\|log, … }` |
 
 ## AI provider layer
 
@@ -92,6 +102,40 @@ speak the OpenAI chat-completions protocol, so any compatible endpoint
 (including local runtimes) works by changing the base URL. HTTP failures
 are mapped to actionable messages (401/403/404/429/5xx). Run cancellation
 uses `AbortController`.
+
+## Deployment
+
+Publishing is split so the renderer never holds a credential or decides
+what is true:
+
+- `services/deploy/providers/` — one adapter per host (`verify`,
+  `listProjects`, `listEnvKeys`, `setEnvVars`, `startDeploy`, `status`,
+  `cancel`, `listDeploys`, `logs`, `domains`), talking to the official REST
+  APIs. `supports.providerBuild` is the dividing line between a host that
+  builds for you (Vercel) and one that expects an upload (Netlify). Cloudflare
+  Pages, Render and Railway are declared descriptors with no adapter, and the
+  controller refuses to build one rather than pretending.
+- `services/deploy/sourceFiles.js` — collects the bundle without Git,
+  honouring `.gitignore` and the provider's ignore files, excluding keys and
+  databases by rule, and digesting files with SHA1 so a host can skip what it
+  already has. Hard budgets cap file count, file size and total size.
+- `services/deploy/deployService.js` `detect()` — classifies the project
+  (static, Vite/React, Next.js, other Node, desktop app, unsupported) and
+  reports whether a backend exists, because a frontend-only upload is not a
+  full deployment.
+- `services/deploy/deployController.js` — the pipeline the panel drives:
+  `validating → configuring → building → packing → uploading → deploying →
+  live`, with confirmation gates before a production publish, before running
+  the project's own build command, and before shipping only the frontend. A
+  URL is attached to a run only when the provider reports it live.
+- `services/deploy/deployDiagnostics.js` — turns a failed run into a written
+  explanation. It assembles the run, its own log tail and the host's build
+  log, masks every credential shape (plus the stored token, handed in as a
+  never-send literal), and asks the assistant already configured for the AI
+  panel. If that assistant cannot answer, the same evidence is matched
+  against built-in failure causes and the panel labels which route was used.
+  It never states anything about the host's state — that stays the
+  controller's job.
 
 ## Editor
 

@@ -1,0 +1,70 @@
+# NovaLink Live server — fly.io deployment.
+#
+# Usage:
+#   cd link-server
+#   fly launch --no-deploy                     # creates the app + this file
+#   fly secrets set LINK_SERVER_SECRET="$(openssl rand -hex 32)"
+#   fly secrets set LINK_INVITE_CODE="<optional>"
+#   fly volumes create link_data --size 1 --region <your-region>
+#   fly deploy
+#
+# Once the app is live the URL looks like https://<app>.fly.dev. Set that as
+# NOVALINK_LIVE_URL when you build the desktop:
+#   NOVALINK_LIVE_URL=https://<app>.fly.dev npm run dist:win
+#
+# Fly terminates TLS at the edge; the container only ever sees plaintext
+# loopback, so LINK_TRUST_PROXY=1 (already baked into the Dockerfile).
+
+app = "novalink-ntseth-live"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LINK_HOST = "0.0.0.0"
+  LINK_PORT = "8790"
+  LINK_DATA_DIR = "/data"
+  LINK_TRUST_PROXY = "1"
+  LINK_ALLOW_PLAINTEXT = "0"
+  # Registration policy: leave this on to let any NovaCode user self-sign-up.
+  # Turn it off and set LINK_INVITE_CODE as a secret to run a private beta.
+  LINK_REGISTRATION_OPEN = "1"
+  # TURN relay for WebRTC calls. Free-of-cost options are documented in
+  # DEPLOYMENT.md; without a TURN server many NAT-symmetric users cannot
+  # place voice/video calls. Chat always works regardless.
+  # LINK_TURN_URL = ""
+  # LINK_STUN_URLS = "stun:stun.l.google.com:19302"
+
+[http_service]
+  internal_port = 8790
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 500
+    soft_limit = 300
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "GET"
+    path = "/health"
+
+# WebSocket upgrade goes through the same service — fly.io handles it as long
+# as the response includes `Upgrade: websocket`. No separate proxy service is
+# required.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[mounts]
+  source = "link_data"
+  destination = "/data"
+

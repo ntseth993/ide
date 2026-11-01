@@ -109,6 +109,7 @@ const MENUS = [
       { label: 'Source Control', disabled: true, hint: 'Ctrl+Shift+G' },
       { label: 'Run', disabled: true, hint: 'Ctrl+Shift+D' },
       { label: 'Extensions', command: 'view.extensions', hint: 'Ctrl+Shift+X' },
+      { label: 'Deploy', command: 'view.deploy', hint: 'Ctrl+Shift+B' },
       { type: 'sep' },
       { label: 'Problems', command: 'view.problems', hint: 'Ctrl+Shift+M' },
       { label: 'Output', command: 'view.output', hint: 'Ctrl+Shift+U' },

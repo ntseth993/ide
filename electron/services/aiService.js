@@ -254,11 +254,18 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
    * Reuses the streaming transport so every provider works, then aborts once
    * enough text has arrived. Never throws at the caller: a failure simply
    * means "no suggestion", which the editor renders silently.
+   *
+   * `timeoutMs` / `maxChars` widen the latency and answer budgets for callers that
+   * are not completing a token mid-keystroke — a deploy diagnosis is worth waiting
+   * for and needs more than a ghost text's worth of output. Defaults are unchanged,
+   * so inline completion keeps its cost profile.
    * @returns {Promise<{ text: string, reason?: string, error?: string }>}
    */
-  async function complete({ provider, messages, model, baseUrl, temperature } = {}, emit = onEvent) {
+  async function complete({ provider, messages, model, baseUrl, temperature, timeoutMs, maxChars } = {}, emit = onEvent) {
     const meta = getProvider(provider);
     const { module: providerModule } = getModule(meta.id);
+    const wait = Number(timeoutMs) > 0 ? Math.min(Number(timeoutMs), 120000) : COMPLETION_TIMEOUT_MS;
+    const answerLimit = Number(maxChars) > 0 ? Math.min(Number(maxChars), 8000) : COMPLETION_MAX_CHARS;
 
     // AI is a member feature: the same gate as chat, minus the error toast.
     if (auth) {
@@ -284,7 +291,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error('Timed out')), COMPLETION_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(new Error('Timed out')), wait);
     // Unique key per request so overlapping completions never evict each other.
     const completionId = `complete-${nextRunId}`;
     nextRunId += 1;
@@ -303,7 +310,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
         onDelta: (delta) => {
           text += delta;
           // Enough is enough: stop the stream, keep what we have.
-          if (text.length > COMPLETION_MAX_CHARS) controller.abort(new Error('Truncated'));
+          if (text.length > answerLimit) controller.abort(new Error('Truncated'));
         },
       });
     } catch (error) {

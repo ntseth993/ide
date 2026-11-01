@@ -25,9 +25,13 @@ const { createAuthFlow } = require('./services/authFlow');
 const fsService = require('./services/fsService');
 const { createAiService } = require('./services/aiService');
 const { createNovaLink } = require('./services/novalink');
+const liveConfig = require('./services/novalink/liveConfig');
 const { createNovaDbService } = require('./services/novadb/novaDbService');
 const { createNovaDbServer } = require('./services/novadb/novaDbServer');
 const { createDeployService } = require('./services/deploy/deployService');
+const { createDeployController } = require('./services/deploy/deployController');
+const { createDeployDiagnostics } = require('./services/deploy/deployDiagnostics');
+const { createDeployHistory } = require('./services/deploy/deployHistory');
 const { createPreviewServer } = require('./services/deploy/previewServer');
 const { registerIpc } = require('./ipc/registerIpc');
 const { buildMenuTemplate } = require('./menu');
@@ -61,6 +65,7 @@ let novalinkService = null;
 let novaDbService = null;
 let novaDbServer = null;
 let deployService = null;
+let deployController = null;
 let previewServer = null;
 let pendingOpenRequest = null;
 
@@ -497,14 +502,22 @@ function wireServices() {
 
   runtimeService = createRuntimeService({ logger });
 
-  // NovaLink peer-to-peer collaboration (local-network transport + an honest
-  // Bluetooth transport). It streams a single state snapshot to the renderer.
+  // NovaLink Live — an internet-connected collaboration client. The session
+  // bearer credential lives in the OS-encrypted secret store; the renderer
+  // never sees it. Frames from the server stream to the renderer on
+  // `novalinkLive:event`, and status snapshots on `novalinkLive:status-event`.
+  // The base URL is baked into the packaged build by
+  // `scripts/generate-live-config.js` at prebuild time (see liveConfig.js). In
+  // dev with no generated file it falls back to `process.env.NOVALINK_LIVE_URL`.
   novalinkService = createNovaLink({
-    userDataDir: USER_DATA,
+    secretStore,
     logger,
-    onEvent: (payload) => broadcast('novalink:event', payload),
+    onEvent: (frame) => broadcast('novalinkLive:event', frame),
+    onStatusChange: (snapshot) => broadcast('novalinkLive:status-event', snapshot),
   }).service;
-  novalinkService.start().catch((error) => logger.error('novalink start failed', { error: error.message }));
+  novalinkService
+    .boot({ baseUrl: liveConfig.getBaseUrl() })
+    .catch((error) => logger.error('novalink live boot failed', { error: error.message }));
 
   // NovaDB — the IDE's own database engine, persisted as a JSON snapshot under
   // userData so schemas and records survive a restart. The Database workspace
@@ -528,14 +541,41 @@ function wireServices() {
     novaDbServer.start().catch((error) => logger.error('novadb connector start failed', { error: error.message }));
   }
 
-  // Deploy workspace (Phase: deploy) — build/preview/export the user's project.
+  // Deploy workspace — build/preview/export the user's project, plus real
+  // publishing through the hosting provider adapters.
   // build() shells out through the terminal service's runCapture (workspace-
-  // confined); the preview server binds loopback only. No hosting tokens are
-  // ever stored here — publishing to a real host stays a transparent command.
+  // confined); the preview server binds loopback only. A provider access token
+  // is held only by the encrypted secret store: the controller reads it in this
+  // process immediately before an API call and never returns it to the window.
   deployService = createDeployService({ runCapture: (opts) => terminalService.runCapture(opts), logger });
   previewServer = createPreviewServer({ logger });
 
-  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow, novaDbService, novaDbServer, deployService, previewServer };
+  // Deployment history lives under userData (never inside the project folder,
+  // so it can neither be committed nor end up in an upload).
+  const deployHistory = createDeployHistory({
+    filePath: path.join(USER_DATA, 'novacode-deploy-history.json'),
+    logger,
+  });
+  deployController = createDeployController({
+    deploy: deployService,
+    secretStore,
+    settings: settingsService,
+    history: deployHistory,
+    logger,
+  });
+
+  // Failed deploys are explained with the assistant the developer already
+  // configured, fed only redacted evidence (see deployDiagnostics). No second
+  // API key, no second provider list, and nothing is sent unless it is asked for.
+  const deployDiagnostics = createDeployDiagnostics({
+    hosting: deployController,
+    ai: aiService,
+    settings: settingsService,
+    secretStore,
+    logger,
+  });
+
+  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow, novaDbService, novaDbServer, deployService, deployController, deployDiagnostics, previewServer };
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -561,7 +601,7 @@ if (!gotLock) {
     applySecurityHeaders();
     if (app.isPackaged) registerAppProtocol();
 
-    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth, novaDbService: novadb, novaDbServer: novadbConnector, deployService: deploy, previewServer: preview } = wireServices();
+    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth, novaDbService: novadb, novaDbServer: novadbConnector, deployService: deploy, deployController: hosting, deployDiagnostics: diagnosis, previewServer: preview } = wireServices();
     registerIpc({
       isTrustedSender,
       getWindowForSender: windowForSender,
@@ -581,6 +621,8 @@ if (!gotLock) {
       novadb,
       novadbConnector,
       deploy,
+      hosting,
+      diagnosis,
       preview,
       applyAppearance,
       logger,
