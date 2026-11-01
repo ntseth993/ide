@@ -30,6 +30,10 @@ COPY events.js http.js hub.js presence.js rateLimit.js routes.js ./
 # Some copies of the repo split WS handling into ws.js; include both if present
 # by copying everything else. This keeps the image build tolerant of refactors.
 COPY *.js ./
+# The classroom admin dashboard is a single self-contained HTML file served at
+# /admin (see server.js). It is not a .js file, so it must be copied explicitly
+# or the route returns "Admin UI not found."
+COPY admin-ui.html ./
 
 # Writable mount point for the SQLite database + uploaded files.
 RUN mkdir -p /data && chown -R node:node /data /srv/app
