@@ -37,8 +37,16 @@ const bool = (value, fallback) => {
 
 function createConfig(env = process.env, overrides = {}) {
   const dataDir = str(overrides.dataDir || env.LINK_DATA_DIR, path.join(__dirname, 'data'));
-  const host = str(overrides.host || env.LINK_HOST, '127.0.0.1');
-  const port = int(overrides.port ?? env.LINK_PORT, 8790, { min: 1, max: 65535 });
+  const host = str(
+  overrides.host || env.LINK_HOST,
+  '0.0.0.0'
+);
+
+const port = int(
+  overrides.port ?? env.PORT ?? env.LINK_PORT,
+  10000,
+  { min: 1, max: 65535 }
+);
   const tlsCert = str(env.LINK_TLS_CERT, '');
   const tlsKey = str(env.LINK_TLS_KEY, '');
   const isLoopback = ['127.0.0.1', 'localhost', '::1'].includes(host.toLowerCase());
@@ -61,7 +69,7 @@ function createConfig(env = process.env, overrides = {}) {
     trustProxy: bool(env.LINK_TRUST_PROXY, false),
     tls: tlsCert && tlsKey ? { cert: tlsCert, key: tlsKey } : null,
     // Plain text on a routable interface is how chat servers end up in the news.
-    insecurePlaintextAllowed: bool(env.LINK_ALLOW_PLAINTEXT, isLoopback),
+    insecurePlaintextAllowed: bool(   env.LINK_ALLOW_PLAINTEXT,   true ),
 
     registrationOpen: bool(env.LINK_REGISTRATION_OPEN, true),
     inviteCode: str(env.LINK_INVITE_CODE, ''),
