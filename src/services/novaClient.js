@@ -534,6 +534,12 @@ export const client = {
   novalinkLiveSendCallSignal(payload) { requireDesktop(); return nova.novalinkLiveSendCallSignal(payload); },
   novalinkLiveNotify(payload) { requireDesktop(); return nova.novalinkLiveNotify(payload); },
 
+  // classroom monitor
+  novalinkLiveClassroomEnroll(payload) { requireDesktop(); return nova.novalinkLiveClassroomEnroll(payload); },
+  novalinkLiveClassroomUnenroll() { requireDesktop(); return nova.novalinkLiveClassroomUnenroll(); },
+  novalinkLiveClassroomStatus() { requireDesktop(); return nova.novalinkLiveClassroomStatus(); },
+  novalinkLiveClassroomReport(payload) { requireDesktop(); return nova.novalinkLiveClassroomReport(payload); },
+
   // main -> renderer subscriptions
   onNovaLinkLiveEvent(callback) {
     return nova?.onNovaLinkLiveEvent ? nova.onNovaLinkLiveEvent(callback) : () => {};

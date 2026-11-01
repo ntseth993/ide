@@ -130,6 +130,12 @@ function createEvents({ accounts, connections, presence, chat, calls, hub, logge
     handler(record, message);
   }
 
+  /** Allow external modules (e.g. adminHub) to register additional frame handlers. */
+  function addEventHandler(frameType, handler) {
+    HANDLERS[frameType] = handler;
+    CLIENT_EVENTS.push(frameType);
+  }
+
   // ---------------------------------------------------------------------------
   // Socket lifecycle
   // ---------------------------------------------------------------------------
@@ -189,6 +195,7 @@ function createEvents({ accounts, connections, presence, chat, calls, hub, logge
     notifyPresence,
     onProfileChanged,
     contactsAudience,
+    addEventHandler,
   };
 }
 

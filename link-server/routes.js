@@ -29,7 +29,7 @@ function created(status, body) {
   return { status, body };
 }
 
-function createRoutes({ store, accounts, connections, presence, chat, attachments, calls, hub, events, config, logger, limiter }) {
+function createRoutes({ store, accounts, connections, presence, chat, attachments, calls, hub, events, config, logger, limiter, admin }) {
   const router = createRouter();
   const searchMode = store.searchMode;
 

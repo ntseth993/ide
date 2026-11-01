@@ -34,6 +34,7 @@ function rowToUser(row) {
     displayName: row.display_name,
     bio: row.bio || '',
     avatarId: row.avatar_id || null,
+    role: row.role || 'user',
     createdAt: Number(row.created_at_ms),
     lastActiveAt: Number(row.last_active_ms) || null,
   };
@@ -53,7 +54,7 @@ function rowToPrivacy(row) {
 }
 
 function createAccounts({ store, config, logger, limiter, now = Date.now }) {
-  const USER_COLUMNS = 'id, username, display_name, bio, avatar_id, created_at_ms, last_active_ms, deleted_at_ms';
+  const USER_COLUMNS = 'id, username, display_name, bio, avatar_id, role, created_at_ms, last_active_ms, deleted_at_ms';
 
   function findUserById(id) {
     return store.get(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND deleted_at_ms IS NULL`, id);
@@ -94,10 +95,11 @@ function createAccounts({ store, config, logger, limiter, now = Date.now }) {
 
     const id = newId();
     const timestamp = now();
+    const role = (config.adminBootstrapUsername && handle.toLowerCase() === config.adminBootstrapUsername.toLowerCase()) ? 'admin' : 'user';
     store.transaction(() => {
-      store.run(`INSERT INTO users (id, username, display_name, bio, password_hash, created_at_ms, last_active_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        id, handle, name, intro, hashPassword(password), timestamp, timestamp);
+      store.run(`INSERT INTO users (id, username, display_name, bio, password_hash, role, created_at_ms, last_active_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, handle, name, intro, hashPassword(password), role, timestamp, timestamp);
       store.run(`INSERT INTO user_privacy (user_id, presence_visible_to, contact_requests_from, appear_offline,
                     show_last_active, read_receipts_enabled, calls_enabled, attachments_enabled, updated_at_ms)
                  VALUES (?, 'contacts', 'everyone', 0, 1, 1, 1, 1, ?)`, id, timestamp);
@@ -304,6 +306,12 @@ function createAccounts({ store, config, logger, limiter, now = Date.now }) {
     return rowToUser(findUserById(optionalId(userId, 'user id') || ''));
   }
 
+  /** Check if a user has admin role. */
+  function isAdmin(userId) {
+    const row = store.get('SELECT role FROM users WHERE id = ? AND deleted_at_ms IS NULL', userId);
+    return row ? row.role === 'admin' : false;
+  }
+
   return {
     register,
     login,
@@ -321,6 +329,7 @@ function createAccounts({ store, config, logger, limiter, now = Date.now }) {
     getPrivacy,
     searchUsers,
     profileOf,
+    isAdmin,
     DEFAULT_PRIVACY,
   };
 }

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NovaCode Classroom — Admin Dashboard</title>
+<style>
+:root { --bg: #1e1e2e; --surface: #2a2a3c; --border: #3f3f56; --text: #e0e0e8; --muted: #9090a8; --accent: #7c6ff0; --ok: #4ecb71; --err: #f06060; --warn: #f0a040; --radius: 8px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--accent); }
+button { cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 6px 14px; border-radius: var(--radius); font-size: 13px; }
+button:hover { background: var(--border); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input, select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: var(--radius); font-size: 13px; }
+input:focus { outline: none; border-color: var(--accent); }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+header h1 { font-size: 1.2rem; }
+.auth-panel, .dashboard { display: none; }
+.auth-panel.active, .dashboard.active { display: block; }
+.auth-panel { max-width: 360px; margin: 4rem auto; }
+.auth-panel h2 { margin-bottom: 1rem; }
+.auth-panel form { display: flex; flex-direction: column; gap: 0.75rem; }
+.error { color: var(--err); font-size: 0.85rem; }
+
+.classes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.class-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
+.class-card h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+.class-card .code { font-family: monospace; font-size: 1.1rem; letter-spacing: 0.1em; color: var(--accent); }
+.class-card .meta { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+.class-card .actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+
+.students-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.student-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; position: relative; }
+.student-tile .status-dot { position: absolute; top: 12px; right: 12px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.student-tile .status-dot.live { background: var(--ok); }
+.student-tile h4 { font-size: 0.9rem; margin-bottom: 0.25rem; }
+.student-tile .device { font-size: 0.75rem; color: var(--muted); }
+.student-tile .activity { margin-top: 0.75rem; font-size: 0.8rem; }
+.student-tile .activity .file { color: var(--accent); font-family: monospace; }
+.student-tile .activity .preview { background: var(--bg); padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.72rem; margin-top: 0.5rem; max-height: 80px; overflow: hidden; white-space: pre-wrap; color: var(--muted); }
+.student-tile .activity .terminal { margin-top: 0.4rem; }
+.student-tile .activity .terminal code { color: var(--warn); font-size: 0.72rem; }
+
+.toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.toolbar select { min-width: 200px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>NovaCode Classroom</h1>
+    <span id="user-info" style="font-size:0.85rem;color:var(--muted)"></span>
+  </header>
+
+  <div class="auth-panel active" id="auth-panel">
+    <h2>Sign in as Teacher</h2>
+    <form id="login-form">
+      <input type="text" id="username" placeholder="Username" autocomplete="username" required>
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required>
+      <button type="submit" class="primary">Sign in</button>
+      <p class="error" id="login-error"></p>
+    </form>
+  </div>
+
+  <div class="dashboard" id="dashboard">
+    <div class="toolbar">
+      <button id="btn-create" class="primary">+ New Class</button>
+      <select id="class-select"><option value="">Select a class...</option></select>
+      <button id="btn-refresh">Refresh</button>
+      <span id="live-status" style="font-size:0.8rem;color:var(--muted)">Not connected</span>
+    </div>
+    <div class="classes-grid" id="classes-grid"></div>
+    <div class="students-grid" id="students-grid"></div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let token = '';
+let ws = null;
+let currentClassId = '';
+
+// --- Auth ---
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  try {
+    const res = await fetch(`${API}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+      }),
+    });
+    if (!res.ok) { const body = await res.json(); throw new Error(body.error?.message || 'Login failed'); }
+    const data = await res.json();
+    if (data.user?.role !== 'admin') throw new Error('This account does not have admin access.');
+    token = data.token;
+    showDashboard(data.user);
+  } catch (err) { errEl.textContent = err.message; }
+});
+
+function showDashboard(user) {
+  document.getElementById('auth-panel').classList.remove('active');
+  document.getElementById('dashboard').classList.add('active');
+  document.getElementById('user-info').textContent = `${user.displayName} (${user.username})`;
+  loadClasses();
+  connectWS();
+}
+
+// --- Classes ---
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) { token = ''; document.getElementById('auth-panel').classList.add('active'); document.getElementById('dashboard').classList.remove('active'); throw new Error('Session expired'); }
+  return res.json();
+}
+
+async function loadClasses() {
+  try {
+    const { items } = await apiFetch('/api/admin/classes');
+    const grid = document.getElementById('classes-grid');
+    const select = document.getElementById('class-select');
+    grid.innerHTML = '';
+    select.innerHTML = '<option value="">Select a class...</option>';
+    for (const cls of items) {
+      grid.innerHTML += `<div class="class-card"><h3>${esc(cls.name)}</h3><div class="code">${esc(cls.joinCode)}</div><div class="meta">${cls.studentCount} student(s) · created ${new Date(cls.createdAt).toLocaleDateString()}</div><div class="actions"><button onclick="viewClass('${cls.id}')">View Students</button><button onclick="dissolveClass('${cls.id}')">Dissolve</button></div></div>`;
+      select.innerHTML += `<option value="${cls.id}">${esc(cls.name)}</option>`;
+    }
+  } catch (e) { console.error(e); }
+}
+
+document.getElementById('btn-create').addEventListener('click', async () => {
+  const name = prompt('Class name:');
+  if (!name) return;
+  await apiFetch('/api/admin/classes', { method: 'POST', body: JSON.stringify({ name }) });
+  loadClasses();
+});
+
+async function dissolveClass(id) {
+  if (!confirm('Dissolve this class? All students will be unenrolled.')) return;
+  await apiFetch(`/api/admin/classes/${id}`, { method: 'DELETE' });
+  loadClasses();
+}
+
+document.getElementById('class-select').addEventListener('change', (e) => { viewClass(e.target.value); });
+document.getElementById('btn-refresh').addEventListener('click', () => { if (currentClassId) viewClass(currentClassId); else loadClasses(); });
+
+async function viewClass(classId) {
+  if (!classId) return;
+  currentClassId = classId;
+  document.getElementById('class-select').value = classId;
+  document.getElementById('classes-grid').innerHTML = '';
+  try {
+    const { items: students } = await apiFetch(`/api/admin/classes/${classId}/students`);
+    const grid = document.getElementById('students-grid');
+    grid.innerHTML = students.length ? '' : '<p style="color:var(--muted)">No students enrolled yet. Share the join code!</p>';
+    for (const s of students) {
+      const online = Date.now() - s.lastSeenAt < 30000;
+      grid.innerHTML += `<div class="student-tile" id="student-${s.enrollmentId}"><div class="status-dot ${online ? 'live' : ''}"></div><h4>${esc(s.displayName)}</h4><div class="device">${esc(s.deviceLabel || s.username)}</div><div class="activity"><div class="file">No activity yet</div></div></div>`;
+    }
+    // Subscribe via WS
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'admin.subscribe', classId }));
+  } catch (e) { console.error(e); }
+}
+
+// --- WebSocket ---
+function connectWS() {
+  const proto = API.startsWith('https') ? 'wss:' : 'ws:';
+  const url = `${proto}//${API.replace(/^https?:\/\//, '')}/link`;
+  ws = new WebSocket(url);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: 'auth', token }));
+    document.getElementById('live-status').textContent = 'Connected';
+    document.getElementById('live-status').style.color = 'var(--ok)';
+  };
+  ws.onmessage = (event) => {
+    try {
+      const frame = JSON.parse(event.data);
+      if (frame.type === 'admin.event') updateStudentTile(frame);
+    } catch {}
+  };
+  ws.onclose = () => {
+    document.getElementById('live-status').textContent = 'Disconnected — retrying...';
+    document.getElementById('live-status').style.color = 'var(--err)';
+    setTimeout(connectWS, 3000);
+  };
+}
+
+function updateStudentTile(evt) {
+  const tile = document.getElementById(`student-${evt.enrollmentId}`);
+  if (!tile) return;
+  const dot = tile.querySelector('.status-dot');
+  dot.classList.add('live');
+  const activity = tile.querySelector('.activity');
+  if (evt.eventType === 'editor.snapshot') {
+    activity.innerHTML = `<div class="file">${esc(evt.payload.path || 'untitled')} (${esc(evt.payload.language || '')})</div><div class="preview">${esc(evt.payload.content || '')}</div>`;
+  } else if (evt.eventType === 'terminal.command') {
+    activity.innerHTML = `<div class="terminal"><code>$ ${esc(evt.payload.command)}</code></div>`;
+  } else if (evt.eventType === 'file.open') {
+    activity.innerHTML = `<div class="file">Opened: ${esc(evt.payload.path)}</div>`;
+  } else if (evt.eventType === 'ai.prompt') {
+    activity.innerHTML = `<div class="file">AI: ${esc((evt.payload.prompt || '').slice(0, 80))}</div>`;
+  }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+</script>
+</body>
+</html>

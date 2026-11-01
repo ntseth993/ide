@@ -45,6 +45,14 @@ services:
         value: "1"
       - key: LINK_PASSWORD_MIN_LENGTH
         value: "12"
+      # Classroom monitor. The FIRST account registered whose username matches
+      # ADMIN_BOOTSTRAP_USERNAME (case-insensitive) is stamped role='admin'.
+      # There is no promote path later, so set this BEFORE you register your
+      # teacher account. Provide the value in the Render dashboard.
+      - key: ADMIN_BOOTSTRAP_USERNAME
+        sync: false        # set in the dashboard, e.g. "teacher"
+      - key: ADMIN_RETENTION_HOURS
+        value: "24"        # activity_events older than this are pruned
       - key: LINK_SERVER_SECRET
         sync: false        # set in the dashboard: openssl rand -hex 32
       - key: LINK_INVITE_CODE

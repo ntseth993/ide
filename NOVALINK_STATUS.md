@@ -37,6 +37,36 @@ Read this before deciding whether NovaLink Live is "done" for your use.
 - **Deploy recipes** (`link-server/Dockerfile`, `link-server/fly.toml`,
   `link-server/render.yaml`) and the operator runbook
   (`link-server/DEPLOYMENT.md`).
+- **Classroom Monitor** (`link-server/admin.js`, `link-server/adminHub.js`,
+  `link-server/admin-ui.html`, `electron/services/classroom/*`,
+  `src/components/NovaLinkLive/ClassroomBadge.jsx`) — a teacher (an account
+  with `role='admin'`) creates classes and receives a 6-character join code;
+  students paste that code in **Settings → NovaLink → Classroom** to enroll.
+  Enrolled students stream structured activity frames
+  (`editor.snapshot`, `file.open`, `file.rename`, `terminal.command`,
+  `ai.prompt`, `app.focus`) over the same `/link` WebSocket chat already
+  uses; the server stores them in `activity_events` (default 24-hour
+  retention, `ADMIN_RETENTION_HOURS`) and fans them out in real time to
+  any admin socket that has issued `admin.subscribe`. A persistent
+  "Monitored" badge in the status bar cannot be hidden by CSS because it
+  renders in the App shell, not inside the workspace. See
+  `SECURITY.md` for the full consent and data-handling model.
+
+### Classroom Monitor — first-run checklist
+
+1. Deploy `link-server` with `ADMIN_BOOTSTRAP_USERNAME=<handle>` set in the
+   environment. The **first** account registered whose username matches
+   (case-insensitive) is stamped `role='admin'`. Every subsequent account
+   is a plain `user`. There is no in-app way to promote an account later;
+   rotate the env var and re-bootstrap if you need a second admin.
+2. Teacher signs into the dashboard at `http://<host>/admin`, creates a
+   class, and copies the join code.
+3. Student opens NovaCode → Settings → NovaLink → Classroom, pastes the
+   code. The badge appears in the status bar within a second, and the
+   teacher's dashboard tile for that student goes live.
+4. Student can unenroll at any time by clicking the badge → Unenroll; the
+   enrollment row is deleted server-side and no further events are stored
+   for that enrollment id.
 
 ## Acceptance test status
 
@@ -67,6 +97,16 @@ Read this before deciding whether NovaLink Live is "done" for your use.
   does. The `novalinkLive:notify` shape guard is covered here.
 - `tests/liveConfig.test.js` exercises the build-time URL generator against
   a temp output directory, and the runtime reader via `__resetForTests`.
+- `tests/link-server/classroom.test.js` (17 cases) boots a real SQLite
+  database, registers a teacher (via `ADMIN_BOOTSTRAP_USERNAME`) and
+  students, and asserts the full class CRUD + enrollment + activity
+  storage + WS-frame routing pipeline — including the admin-role guard on
+  `admin.subscribe` and the 24-hour prune.
+- `tests/novalink/classroomReporter.test.js` (14 cases) uses vitest fake
+  timers to verify the debounced `editor.snapshot` collapses rapid edits
+  into one frame every `DEBOUNCE_MS`, truncates long content to 200
+  characters, and flushes pending snapshots on file switch. Terminal,
+  AI-prompt, file-rename, and app-focus frames fire immediately.
 
 ## What I cannot verify in this environment
 

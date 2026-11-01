@@ -67,6 +67,100 @@ what it can do:
     publishes it. The interactive terminal is **not** filtered: it is your
     own shell, and you can already read your own environment there.
 
+## Classroom monitoring
+
+NovaCode ships an opt-in **Classroom Monitor** so a teacher (an account
+with `role='admin'` on the deployed `link-server`) can see what an
+enrolled student is doing in the editor in real time. This is the most
+powerful feature in the product and the easiest one to misuse, so the
+guarantees below are load-bearing. Read them before you enable it in an
+institution.
+
+**Consent and control live with the student, not the teacher.**
+
+- Enrollment requires the student to **actively paste a join code** into
+  Settings → NovaLink → Classroom. A teacher cannot push monitoring onto
+  a machine they do not physically control.
+- Every enrolled student sees a permanent, non-dismissible
+  **"Monitored" badge** in the status bar with a pulsing dot. The badge
+  is rendered by `src/App.jsx` in the shell layer — a student cannot
+  hide it with a workspace CSS override or by opening a different file.
+- The student can unenroll at any time from the badge dialog. On
+  unenroll, the `enrollments` row is deleted; subsequent
+  `activity.report` frames for that enrollment id are refused by the
+  server with `enrollment_not_found`.
+
+**Data minimisation is enforced by the reporter, not by policy.**
+
+- Only six event types are ever emitted: `editor.snapshot`, `file.open`,
+  `file.rename`, `terminal.command`, `ai.prompt`, `app.focus`. There is
+  no screen capture, no remote input, no keylogger, no filesystem scan,
+  and no network-sniffer in this feature. The out-of-scope list in
+  `NOVALINK_STATUS.md` is intentional.
+- `editor.snapshot` reports the **first 200 characters** of the active
+  file, the language, and the cursor position — not the full file, not
+  files the student is not currently viewing, and not other tabs.
+- Editor snapshots are **debounced to at most one frame every 2 s**, so
+  a fast typist produces at most 30 payloads per minute rather than one
+  per keystroke. Terminal commands, AI prompts, file renames and focus
+  changes fire immediately (they are already low-frequency).
+- Payloads are truncated at fixed budgets: 200 characters for editor
+  content, 500 for terminal commands, 300 for AI prompts. Anything
+  longer never leaves the machine.
+
+**Transport and storage.**
+
+- Activity frames ride the same `/link` WebSocket as chat, so on
+  a properly deployed server (any of `link-server/fly.toml`,
+  `render.yaml`, `Dockerfile` behind a TLS terminator) they are
+  protected by WSS/TLS end-to-end. Do **not** run a classroom on
+  plain HTTP; the `isLoopback` check in `link-server/config.js` allows
+  plaintext only for development.
+- The student app does **not** cache activity locally. Events go
+  directly from the reporter to the socket. If the socket is down, the
+  frame is dropped with a warning log — nothing queues to disk.
+- The server writes events to `activity_events` with a **default 24-hour
+  retention window** (`ADMIN_RETENTION_HOURS`, pruned on startup and
+  hourly). Nothing older than that survives a server restart.
+- Enrollment tokens (class id, enrollment id, join code) are persisted
+  in the **OS credential store** via `electron/services/secretStore.js`
+  (Windows DPAPI, macOS Keychain, Linux libsecret), the same path used
+  for OpenAI API keys. The renderer never sees them; only the four
+  `novalinkLive:classroom*` IPC channels touch them.
+
+**Authorization model.**
+
+- `role='admin'` is assigned **only** during registration of the account
+  whose username matches `ADMIN_BOOTSTRAP_USERNAME`. There is no
+  promotion path. To add a second admin, the operator restarts
+  `link-server` with a new bootstrap handle and re-registers; there is
+  deliberately no `/api/admin/role` endpoint.
+- Every `/api/admin/*` route calls `requireAdmin(userId)` before
+  touching data. `admin.subscribe` frames are refused with
+  `Only admin accounts can subscribe` if the socket's session user is
+  not an admin, and further refused with `class_not_owned` if the admin
+  tries to subscribe to a class whose `teacher_user_id` is not them.
+- A student socket can only report activity for its **own** enrollment.
+  `adminHub.handleActivityReport` looks up the enrollment by the
+  socket's `sessionId`, not by the `enrollmentId` in the frame, so
+  forging a peer's enrollment id from a student socket has no effect.
+
+**Threats this feature does not defend against.**
+
+- A malicious teacher. Once a student is enrolled, the teacher can see
+  everything the reporter sends. There is no teacher-behaviour audit
+  trail beyond the server's own structured logs, and no appeal path.
+  Deploy only in environments where you already trust the administrator.
+- A compromised `link-server`. TLS terminates at the server, which
+  holds plaintext events for up to `ADMIN_RETENTION_HOURS` and holds
+  every enrollment's identity. The reporter trusts the server's
+  certificate; it does not pin. If the deployed host cannot be trusted,
+  do not enroll.
+- A compromised student machine. Nothing here hardens against a student
+  who edits the local app source and rebuilds — the badge and unenroll
+  are the honest-client contract, not a security boundary against the
+  user's own device.
+
 ## What NovaCode deliberately does NOT sandbox
 
 Running a command in the integrated terminal (or the AI applying an edit

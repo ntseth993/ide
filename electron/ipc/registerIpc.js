@@ -82,6 +82,7 @@ function registerIpc({
   applyAppearance = () => ({ ok: false }),
   settings,
   secretStore,
+  classroom,
   ai,
   auth,
   logger,
@@ -807,6 +808,40 @@ function registerIpc({
         }
       });
       notification.show();
+      return { ok: true };
+    });
+
+    // Classroom monitor
+    handle('novalinkLive:classroomEnroll', async (_event, payload = {}) => {
+      if (!classroom || !classroom.enrollmentStore) throw new Error('Classroom module not available.');
+      const joinCode = liveStr(payload.joinCode, 6, 'Join code', { required: true });
+      const deviceLabel = liveStr(payload.deviceLabel, 60, 'Device label') || undefined;
+      return classroom.enrollmentStore.enroll(joinCode, deviceLabel, novalink);
+    });
+    handle('novalinkLive:classroomUnenroll', async () => {
+      if (!classroom || !classroom.enrollmentStore) throw new Error('Classroom module not available.');
+      return classroom.enrollmentStore.unenroll(novalink);
+    });
+    handle('novalinkLive:classroomStatus', async () => {
+      if (!classroom || !classroom.enrollmentStore) return { enrolled: false };
+      const status = await classroom.enrollmentStore.getStatus();
+      return { enrolled: Boolean(status), status };
+    });
+    handle('novalinkLive:classroomReport', (_event, payload = {}) => {
+      if (!classroom || !classroom.activityReporter) return { ok: false, reason: 'not active' };
+      const eventType = liveStr(payload.eventType, 60, 'Event type', { required: true });
+      const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+      const hooks = {
+        'editor.snapshot': 'onEditorChange',
+        'file.open': 'onFileOpen',
+        'file.rename': 'onFileRename',
+        'terminal.command': 'onTerminalCommand',
+        'ai.prompt': 'onAIPrompt',
+        'app.focus': 'onAppFocus',
+      };
+      const fn = hooks[eventType];
+      if (!fn) throw new Error(`Unknown activity type: ${eventType}`);
+      classroom.activityReporter[fn](data);
       return { ok: true };
     });
   }

@@ -1277,3 +1277,69 @@
 }
 .novalink-diag-event { display: flex; gap: 0.5rem; }
 .novalink-diag-event .time { color: var(--faint); flex: none; }
+
+/* ==========================================================================
+   Classroom Monitor — badge, dialog, settings join form
+   ========================================================================== */
+
+.classroom-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.72rem;
+  cursor: pointer;
+  margin-right: 0.5rem;
+}
+.classroom-badge:hover { background: var(--hover); }
+.classroom-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: classroom-pulse 2s infinite;
+}
+@keyframes classroom-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.classroom-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.classroom-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  max-width: 360px;
+  width: 90%;
+}
+.classroom-dialog h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+.classroom-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.75rem; margin: 0 0 0.75rem; font-size: 0.82rem; }
+.classroom-dialog dt { color: var(--muted); }
+.classroom-dialog dd { margin: 0; }
+.classroom-dialog-note { font-size: 0.78rem; color: var(--muted); margin: 0 0 1rem; }
+.classroom-dialog-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.classroom-unenroll-btn { color: var(--err); border-color: var(--err); }
+
+.classroom-join-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.classroom-join-row { display: flex; gap: 0.5rem; }
+.classroom-join-row input {
+  flex: 1;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+.classroom-message { font-size: 0.78rem; color: var(--warn); margin: 0; }

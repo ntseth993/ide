@@ -784,6 +784,8 @@ function createLiveClient({ secretStore, onEvent, onStatusChange, logger, fetchI
     startCall, acceptCall, declineCall, endCall, cancelCall, currentCall, callHistory,
     // realtime frames (exactly the five the server accepts)
     sendPing, sendPresence, sendTyping, sendMessageRead, sendCallSignal,
+    // classroom: generic REST + WS passthrough (gated by IPC validation in registerIpc)
+    request, sendFrame,
   };
 }
 

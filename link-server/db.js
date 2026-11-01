@@ -24,7 +24,7 @@ const { DatabaseSync } = require('node:sqlite');
 // NovaLink Live has never shipped, so SCHEMA_V1 is still edited in place rather
 // than padded with migrations for a database that exists nowhere: the first
 // release cut is what freezes it, and this file says so on purpose.
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_V1 = `
 CREATE TABLE users (
@@ -207,6 +207,41 @@ CREATE TABLE presence_overrides (
 );
 `;
 
+// ---------------------------------------------------------------------------
+// v2: Classroom Monitor — role column, classes, enrollments, activity events.
+// ---------------------------------------------------------------------------
+const SCHEMA_V2 = `
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';
+
+CREATE TABLE IF NOT EXISTS classes (
+  id              TEXT PRIMARY KEY,
+  teacher_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  join_code       TEXT NOT NULL UNIQUE,
+  created_at_ms   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+  id              TEXT PRIMARY KEY,
+  class_id        TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  student_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_label    TEXT,
+  enrolled_at_ms  INTEGER NOT NULL,
+  last_seen_ms    INTEGER,
+  UNIQUE(class_id, student_user_id)
+);
+CREATE INDEX enrollments_student ON enrollments(student_user_id);
+
+CREATE TABLE IF NOT EXISTS activity_events (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  event_type    TEXT NOT NULL,
+  payload       TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL
+);
+CREATE INDEX idx_activity_enrollment_ts ON activity_events(enrollment_id, created_at_ms);
+`;
+
 // FTS5 is used when the bundled SQLite was compiled with it (Node's is). When it
 // is not, search degrades to a LIKE scan — still correct, just slower — and the
 // server logs which mode it chose instead of pretending.
@@ -231,6 +266,7 @@ END;
 
 const MIGRATIONS = {
   1: [SCHEMA_V1],
+  2: [SCHEMA_V2],
 };
 
 function normalize(value) {
@@ -340,4 +376,4 @@ function openDatabase({ filePath, logger = console, readonly = false } = {}) {
   return api;
 }
 
-module.exports = { openDatabase, normalize, SCHEMA_VERSION, SCHEMA_V1, FTS_V1 };
+module.exports = { openDatabase, normalize, SCHEMA_VERSION, SCHEMA_V1, SCHEMA_V2, FTS_V1 };

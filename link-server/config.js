@@ -123,6 +123,10 @@ function createConfig(env = process.env, overrides = {}) {
     // NovaCode talks to this server from its main process, which needs no CORS.
     corsOrigin: str(env.LINK_CORS_ORIGIN, ''),
     hostname: os.hostname(),
+
+    // Classroom monitor: first account matching this username gets role='admin'.
+    adminBootstrapUsername: str(env.ADMIN_BOOTSTRAP_USERNAME, ''),
+    adminRetentionHours: int(env.ADMIN_RETENTION_HOURS, 24, { min: 1, max: 8760 }),
   };
 
   return config;

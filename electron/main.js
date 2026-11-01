@@ -36,6 +36,8 @@ const { createPreviewServer } = require('./services/deploy/previewServer');
 const { registerIpc } = require('./ipc/registerIpc');
 const { buildMenuTemplate } = require('./menu');
 const { loadEnv } = require('./services/env');
+const { createEnrollmentStore } = require('./services/classroom/enrollmentStore');
+const { createActivityReporter } = require('./services/classroom/activityReporter');
 
 // Load gitignored .env (OAuth client ids, API keys) before any service reads
 // process.env. Real environment variables always take precedence.
@@ -517,7 +519,16 @@ function wireServices() {
   }).service;
   novalinkService
     .boot({ baseUrl: liveConfig.getBaseUrl() })
+    .then(() => {
+      // Classroom Monitor: start activity reporting if previously enrolled
+      classroomReporter.start().catch(() => {});
+    })
     .catch((error) => logger.error('novalink live boot failed', { error: error.message }));
+
+  // Classroom Monitor: enrollment store + activity reporter
+  const classroomEnrollment = createEnrollmentStore({ secretStore, logger });
+  const classroomReporter = createActivityReporter({ enrollmentStore: classroomEnrollment, liveClient: novalinkService, logger });
+  const classroom = { enrollmentStore: classroomEnrollment, activityReporter: classroomReporter };
 
   // NovaDB — the IDE's own database engine, persisted as a JSON snapshot under
   // userData so schemas and records survive a restart. The Database workspace
@@ -575,7 +586,7 @@ function wireServices() {
     logger,
   });
 
-  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow, novaDbService, novaDbServer, deployService, deployController, deployDiagnostics, previewServer };
+  return { settingsService, secretStore, changeHistory, extensionService, extensionRegistry, runtimeService, authService, authFlow, novaDbService, novaDbServer, deployService, deployController, deployDiagnostics, previewServer, classroom };
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -601,7 +612,7 @@ if (!gotLock) {
     applySecurityHeaders();
     if (app.isPackaged) registerAppProtocol();
 
-    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth, novaDbService: novadb, novaDbServer: novadbConnector, deployService: deploy, deployController: hosting, deployDiagnostics: diagnosis, previewServer: preview } = wireServices();
+    const { settingsService, secretStore, changeHistory: history, extensionService: extensions, extensionRegistry: registry, runtimeService: runtime, authFlow: auth, novaDbService: novadb, novaDbServer: novadbConnector, deployService: deploy, deployController: hosting, deployDiagnostics: diagnosis, previewServer: preview, classroom } = wireServices();
     registerIpc({
       isTrustedSender,
       getWindowForSender: windowForSender,
@@ -618,6 +629,7 @@ if (!gotLock) {
       registry,
       runtime,
       novalink: novalinkService,
+      classroom,
       novadb,
       novadbConnector,
       deploy,

@@ -34,6 +34,8 @@ const { createCalls } = require('./calls');
 const { createHub } = require('./hub');
 const { createEvents } = require('./events');
 const { createRoutes } = require('./routes');
+const { createAdmin } = require('./admin');
+const { createAdminHub } = require('./adminHub');
 const { completeUpgrade } = require('./ws');
 
 const SOCKET_PATH = '/link';
@@ -100,7 +102,7 @@ function startServer(overrides = {}) {
     limiter,
     onEvent: (record, message) => events.onEvent(record, message),
     onAuthed: (record) => events.onAuthed(record),
-    onClosed: (record, info) => events.onClosed(record, info),
+    onClosed: (record, info) => { events.onClosed(record, info); adminHub?.onSocketClosed(record); },
     // A heartbeat can demote someone to "away" without any client asking: the only
     // way a contact's green dot changes on its own is for the server to say so.
     onPresenceDrift: (userId) => events.notifyPresence(userId, events.contactsAudience(userId)),
@@ -109,9 +111,18 @@ function startServer(overrides = {}) {
   const events = createEvents({ accounts, connections, presence, chat, calls, hub, logger });
   notifier = (type, userIds, payload, options) => events.notify(type, userIds, payload, options);
 
+  // Classroom Monitor: admin module + WS fan-out
+  const admin = createAdmin({ store, accounts, config, logger });
+  const adminHub = createAdminHub({ store, admin, hub, accounts, logger });
+  // Merge classroom frame handlers into the events dispatcher
+  for (const [frameType, handler] of Object.entries(adminHub.frameHandlers())) {
+    events.addEventHandler(frameType, handler);
+  }
+
   const routes = createRoutes({
-    store, accounts, connections, presence, chat, attachments, calls, hub, events, config, logger, limiter,
+    store, accounts, connections, presence, chat, attachments, calls, hub, events, config, logger, limiter, admin,
   });
+  admin.registerRoutes(routes.router);
 
   const handler = (req, res) => {
     let url;
@@ -120,6 +131,19 @@ function startServer(overrides = {}) {
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end('{"error":{"code":"bad_request","message":"Malformed request URI.","status":400}}');
+      return;
+    }
+    // Serve the admin dashboard HTML at /admin
+    if (url.pathname === '/admin' && req.method === 'GET') {
+      const htmlPath = path.join(__dirname, 'admin-ui.html');
+      try {
+        const html = fs.readFileSync(htmlPath, 'utf8');
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(html);
+      } catch {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Admin UI not found.');
+      }
       return;
     }
     routes.dispatch(req, res, url);
@@ -173,6 +197,11 @@ function startServer(overrides = {}) {
     } catch (error) {
       logger.error?.('attachment sweep failed', { error: String(error.message || error) });
     }
+    try {
+      admin.pruneEvents();
+    } catch (error) {
+      logger.error?.('activity prune failed', { error: String(error.message || error) });
+    }
   }, 15 * 60 * 1000);
   sweeps.unref?.();
 
@@ -206,7 +235,7 @@ function startServer(overrides = {}) {
     });
   }
 
-  return { server, config, store, logger, hub, routes, limiter, close, events, attachments, chat, calls, accounts, connections, presence };
+  return { server, config, store, logger, hub, routes, limiter, close, events, attachments, chat, calls, accounts, connections, presence, admin, adminHub };
 }
 
 /** `npm start` entry. Programmatic callers use startServer() and close(). */

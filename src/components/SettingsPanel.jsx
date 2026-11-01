@@ -44,6 +44,90 @@ function SliderRow({ label, value, min, max, step = 1, display, onChange }) {
   );
 }
 
+/** Classroom enrollment section: join code input + status + unenroll. */
+function ClassroomSection() {
+  const [classroomStatus, setClassroomStatus] = useState(null);
+  const [joinCode, setJoinCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    client.novalinkLiveClassroomStatus?.().then(setClassroomStatus).catch(() => {});
+  }, []);
+
+  async function handleJoin(event) {
+    event.preventDefault();
+    if (!joinCode.trim()) return;
+    setBusy(true);
+    setMessage('');
+    try {
+      const result = await client.novalinkLiveClassroomEnroll({ joinCode: joinCode.trim() });
+      setMessage(`Enrolled in "${result.className || 'class'}".`);
+      setJoinCode('');
+      setClassroomStatus({ enrolled: true, status: result });
+    } catch (error) {
+      setMessage(toUserMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUnenroll() {
+    setBusy(true);
+    try {
+      await client.novalinkLiveClassroomUnenroll();
+      setClassroomStatus({ enrolled: false });
+      setMessage('Unenrolled successfully.');
+    } catch (error) {
+      setMessage(toUserMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const enrolled = classroomStatus?.enrolled;
+  const enrollment = classroomStatus?.status;
+
+  return (
+    <section className="settings-group">
+      <h4>Classroom</h4>
+      {enrolled ? (
+        <div>
+          <p className="muted tiny">
+            Enrolled in <strong>{enrollment?.className || 'a class'}</strong>.
+            Your teacher can see your editor, terminal, and AI activity in real time.
+          </p>
+          <button type="button" className="btn-small" onClick={handleUnenroll} disabled={busy}>
+            {busy ? 'Working...' : 'Unenroll'}
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleJoin} className="classroom-join-form">
+          <p className="muted tiny">
+            Enter a join code from your teacher to enable classroom monitoring.
+          </p>
+          <div className="classroom-join-row">
+            <input
+              type="text"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              placeholder="ABC123"
+              maxLength={6}
+              disabled={busy}
+              aria-label="Class join code"
+            />
+            <button type="submit" disabled={busy || joinCode.trim().length !== 6}>
+              {busy ? 'Joining...' : 'Join'}
+            </button>
+          </div>
+          {message ? <p className="classroom-message" role="alert">{message}</p> : null}
+        </form>
+      )}
+    </section>
+  );
+}
+
 export default function SettingsPanel({ settings, update, runtimes }) {
   const [appInfo, setAppInfo] = useState(null);
   const [connState, setConnState] = useState({ state: 'idle', message: '' });
@@ -494,6 +578,8 @@ export default function SettingsPanel({ settings, update, runtimes }) {
             compiler — languages without their runtime installed run in highlighting-only mode.
           </p>
         </section>
+
+        <ClassroomSection />
 
         {appInfo && (
           <section className="settings-group">

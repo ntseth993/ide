@@ -221,6 +221,13 @@ export const mockNova = {
   novalinkLiveSendMessageRead: vi.fn(async (payload) => ({ ok: true, ...payload })),
   novalinkLiveSendCallSignal: vi.fn(async (payload) => ({ ok: true, ...payload })),
   novalinkLiveNotify: vi.fn(async (payload) => ({ ok: true, ...payload })),
+  // Classroom monitor (see link-server/adminHub.js + electron/services/classroom).
+  // The badge component and Settings section read status on mount; default to
+  // `enrolled: false` so unrelated App tests render without the badge.
+  novalinkLiveClassroomStatus: vi.fn(async () => ({ enrolled: false, status: null })),
+  novalinkLiveClassroomEnroll: vi.fn(async (payload) => ({ ok: true, enrollment: { enrollmentId: 'e'.repeat(8) + '-0000-0000-0000-000000000000', ...payload } })),
+  novalinkLiveClassroomUnenroll: vi.fn(async () => ({ ok: true })),
+  novalinkLiveClassroomReport: vi.fn(async (payload) => ({ ok: true, ...payload })),
   onNovaLinkLiveEvent: vi.fn(() => () => {}),
   onNovaLinkLiveStatus: vi.fn(() => () => {}),
   onNovaLinkLiveOpenConversation: vi.fn(() => () => {}),

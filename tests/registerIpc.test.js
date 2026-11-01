@@ -160,8 +160,8 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    // 51 non-NovaLink channels + 54 NovaLink Live channels (notify added).
-    expect(channels.size).toBe(105);
+    // 51 non-NovaLink channels + 58 NovaLink Live channels (notify + 4 classroom added).
+    expect(channels.size).toBe(109);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -172,8 +172,8 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(105);
-    expect(result.channelCount).toBe(105);
+    expect(secondChannels.size).toBe(109);
+    expect(result.channelCount).toBe(109);
   });
 
   it('exposes the provider catalog and account channels', async () => {
@@ -512,14 +512,14 @@ describe('deploy / hosting IPC contract', () => {
   it('opens 27 extra channels and only when the services exist', async () => {
     const result = await register();
     // 105 base + 27 deploy/hosting channels = 132.
-    expect(result.channelCount).toBe(132);
-    expect(map.size).toBe(132);
+    expect(result.channelCount).toBe(136);
+    expect(map.size).toBe(136);
 
     // No services wired -> no deploy/hosting surface at all.
     const mod = await import('../electron/ipc/registerIpc');
     const bare = new Map();
     mod.registerIpc({ ...services, ipcMain: { handle: (c, f) => bare.set(c, f) } });
-    expect(bare.size).toBe(105);
+    expect(bare.size).toBe(109);
     expect([...bare.keys()].some((k) => k.startsWith('deploy:'))).toBe(false);
   });
 
@@ -741,7 +741,7 @@ describe('deploy / hosting IPC contract', () => {
       deploy: deploySvc,
       ipcMain: { handle: (c, f) => onlyDeploy.set(c, f) },
     });
-    expect(onlyDeploy.size).toBe(108);
+    expect(onlyDeploy.size).toBe(112);
     expect(onlyDeploy.has('deploy:detect')).toBe(true);
     expect(onlyDeploy.has('deploy:start')).toBe(false);
     expect(onlyDeploy.has('deploy:connections')).toBe(false);

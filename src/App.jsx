@@ -15,6 +15,7 @@ import TerminalPanel from './components/TerminalPanel';
 import AIPanel from './components/AIPanel';
 import SettingsPanel from './components/SettingsPanel';
 import StatusBar from './components/StatusBar';
+import ClassroomBadge from './components/NovaLinkLive/ClassroomBadge';
 import CommandPalette from './components/CommandPalette';
 import ToastStack from './components/Toast';
 import DiffReview from './components/DiffReview';
@@ -134,7 +135,19 @@ export default function App() {
     chatBusy: Boolean(aiStreamingRunId),
   };
 
-  const notify = useCallback((text, tone = 'info') => {
+  const notify = useCallback((textOrPayload, toneArg = 'info') => {
+    // Two calling conventions reach this function:
+    //   - legacy positional: notify('Saved.', 'ok')
+    //   - NovaLinkLive components: notify({ tone: 'error', message: '...' })
+    // Normalize both to a plain string so a toast never receives an object as
+    // a React child (which crashes the whole renderer with "Objects are not
+    // valid as a React child (found: object with keys {tone, message})").
+    const payload =
+      textOrPayload && typeof textOrPayload === 'object'
+        ? textOrPayload
+        : { message: textOrPayload, tone: toneArg };
+    const text = typeof payload.message === 'string' ? payload.message : String(payload.message ?? '');
+    const tone = payload.tone || toneArg || 'info';
     const id = (toastId.current += 1);
     setToasts((current) => [...current, { id, text, tone }]);
     setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3200);
@@ -1376,6 +1389,7 @@ export default function App() {
           </>
         )}
 
+        <ClassroomBadge />
         <StatusBar
           workspaceRoot={workspaceRoot}
           activePath={activePath}

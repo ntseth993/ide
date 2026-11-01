@@ -217,6 +217,12 @@ const api = {
   novalinkLiveSendCallSignal: (payload) => invoke('novalinkLive:sendCallSignal', payload || {}),
   novalinkLiveNotify: (payload) => invoke('novalinkLive:notify', payload || {}),
 
+  // classroom monitor
+  novalinkLiveClassroomEnroll: (payload) => invoke('novalinkLive:classroomEnroll', payload || {}),
+  novalinkLiveClassroomUnenroll: (payload) => invoke('novalinkLive:classroomUnenroll', payload || {}),
+  novalinkLiveClassroomStatus: () => invoke('novalinkLive:classroomStatus'),
+  novalinkLiveClassroomReport: (payload) => invoke('novalinkLive:classroomReport', payload || {}),
+
   // main -> renderer: every server-pushed frame in one stream.
   onNovaLinkLiveEvent: (callback) => subscribe('novalinkLive:event', callback),
   // main -> renderer: signed snapshot of the connection state (used by StatusBar).
