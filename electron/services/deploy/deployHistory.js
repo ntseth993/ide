@@ -112,7 +112,15 @@ function createDeployHistory({
         parsed = {};
       }
     } catch (error) {
-      if (error && error.code === 'ENOENT') parsed = {};
+      const code = error && error.code;
+      // No readable history file lives at this path: missing (ENOENT), or a path
+      // segment is a file / a directory rather than a file (ENOTDIR / EISDIR).
+      // POSIX reports ENOTDIR where Windows reports ENOENT, so forgiving all three
+      // keeps behaviour identical across platforms. This is NOT a transient-busy
+      // signal (those are retried above and re-thrown) so treating it as empty
+      // cannot clobber rows that are actually on disk; the write path owns the
+      // real failure and logs it.
+      if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'EISDIR') parsed = {};
       else throw error;
     }
     cache = parsed;
