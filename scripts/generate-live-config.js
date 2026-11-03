@@ -13,9 +13,14 @@
  *     boots unconfigured and the developer sets the URL from the diagnostics
  *     panel or the env. This keeps `npm run dev` usable against a laptop
  *     link-server on 127.0.0.1.
- *   - Production: an empty URL, a placeholder, or a loopback target is a hard
- *     failure. We refuse to emit a package that would ship a broken or
- *     embarrassing default. Acceptance test #11 ("no placeholder URLs in
+ *   - Production, LAN-first: an empty URL is now a valid packaged state. A
+ *     download ships with no cloud endpoint baked in; NovaLink finds a host on
+ *     the local network at runtime (electron/services/novalink/lanDiscovery.js)
+ *     and points the Live client at it. This is what makes the installer work
+ *     with no Render / no paid hosting.
+ *   - Production, explicit URL: a *non-empty* value that is malformed, a
+ *     placeholder, or plain http is still a hard failure. We never ship a
+ *     broken or embarrassing URL. Acceptance test #11 ("no placeholder URLs in
  *     production builds") is enforced here.
  *
  * Not a runtime module. Do not require this from the app; require
@@ -60,11 +65,10 @@ function main() {
   const isProduction = process.env.NODE_ENV === 'production' || process.env.NOVA_PACK === '1';
   const verdict = classify(raw);
 
-  if (!verdict.ok && isProduction) {
-    const message = verdict.reason === 'empty'
-      ? 'NOVALINK_LIVE_URL is required when producing a packaged build. Set it to the public https:// URL of your deployed link-server before running `npm run dist`.'
-      : `NOVALINK_LIVE_URL is not a valid absolute http(s) URL: "${verdict.value || raw}".`;
-    throw new Error(message);
+  // LAN-first: an empty URL is a valid packaged state (see the header). Only a
+  // non-empty value that fails to classify is rejected in production.
+  if (!verdict.ok && isProduction && verdict.reason !== 'empty') {
+    throw new Error(`NOVALINK_LIVE_URL is not a valid absolute http(s) URL: "${verdict.value || raw}".`);
   }
   if (verdict.ok && isProduction) {
     const hit = PLACEHOLDER_PATTERNS.find((pattern) => pattern.test(verdict.value));
@@ -88,7 +92,7 @@ function main() {
   ].join('\n');
   const body = `'use strict';\n${banner}module.exports = { baseUrl: ${JSON.stringify(exported)} };\n`;
   fs.writeFileSync(OUT_FILE, body, 'utf8');
-  const label = exported || '(unconfigured — dev only)';
+  const label = exported || '(unconfigured — LAN discovery will configure it at runtime)';
   process.stdout.write(`liveConfig.generated.js written. baseUrl = ${label}\n`);
 }
 

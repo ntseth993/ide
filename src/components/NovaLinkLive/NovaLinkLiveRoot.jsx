@@ -25,6 +25,7 @@ import * as store from '../../services/novalinkLiveStore';
 import AuthScreen from './AuthScreen';
 import ChatWorkspace from './ChatWorkspace';
 import DiagnosticsPanel from './DiagnosticsPanel';
+import LanConnectionPanel from './LanConnectionPanel';
 
 export default function NovaLinkLiveRoot({
   getEditorSelection,
@@ -112,6 +113,7 @@ export default function NovaLinkLiveRoot({
   return (
     <section className={`panel novalink-live ${asTab ? 'as-tab' : ''}`}>
       {error ? <p className="novalink-live-error" role="alert">{error}</p> : null}
+      <LanConnectionPanel status={status} onNotify={onNotify} />
       {body}
       {showDiagnostics ? <DiagnosticsPanel status={status} onNotify={onNotify} /> : null}
     </section>

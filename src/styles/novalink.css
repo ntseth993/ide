@@ -1343,3 +1343,102 @@
   text-align: center;
 }
 .classroom-message { font-size: 0.78rem; color: var(--warn); margin: 0; }
+
+/* ==========================================================================
+   NovaLink LAN discovery & hosting — compact connection bar + host list
+   ========================================================================== */
+
+.novalink-lan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg));
+}
+.novalink-lan-head { display: flex; align-items: center; gap: 0.6rem; }
+.novalink-lan-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.novalink-lan-badge--on {
+  color: var(--success, #4ade80);
+  border-color: color-mix(in srgb, var(--success, #4ade80) 45%, var(--border));
+  background: color-mix(in srgb, var(--success, #4ade80) 14%, var(--surface-2));
+}
+.novalink-lan-badge--warn {
+  color: var(--warning, #facc15);
+  border-color: color-mix(in srgb, var(--warning, #facc15) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning, #facc15) 12%, var(--surface-2));
+}
+.novalink-lan-badge--off { color: var(--muted); }
+.novalink-lan-target {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+.novalink-lan-toggle {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 0.2rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+.novalink-lan-toggle:hover { border-color: var(--border-strong); color: var(--text); }
+.novalink-lan-error { margin: 0; font-size: 0.74rem; color: var(--error, #f87171); }
+.novalink-lan-body { display: flex; flex-direction: column; gap: 0.7rem; }
+.novalink-lan-scan { display: flex; gap: 0.4rem; }
+.novalink-lan-hosts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.novalink-lan-empty { padding: 0.2rem 0; font-size: 0.76rem; }
+.novalink-lan-host {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.novalink-lan-host.selected { border-color: var(--accent-line, var(--accent)); background: var(--accent-soft, var(--surface-2)); }
+.novalink-lan-host-meta { display: flex; flex-direction: column; gap: 0.1rem; flex: 1 1 auto; min-width: 0; }
+.novalink-lan-host-name { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.novalink-lan-host-addr { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.novalink-lan-manual { display: flex; flex-direction: column; gap: 0.35rem; }
+.novalink-lan-manual-row { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.novalink-lan-manual-row input {
+  flex: 1 1 130px;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+.novalink-lan-host-control { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; padding-top: 0.2rem; border-top: 1px dashed var(--border); }
+.novalink-lan-host-control-text { display: flex; flex-direction: column; gap: 0.15rem; flex: 1 1 200px; font-size: 0.78rem; color: var(--text); }
+.novalink-lan-host-error { color: var(--error, #f87171); }
+.novalink-lan button.danger { color: var(--error, #f87171); border-color: color-mix(in srgb, var(--error, #f87171) 40%, var(--border)); }
+.novalink-lan .hint { color: var(--muted); font-size: 0.72rem; margin: 0; }

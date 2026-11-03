@@ -71,6 +71,7 @@ function registerIpc({
   registry,
   runtime,
   novalink,
+  lan,
   novadb,
   novadbConnector,
   deploy,
@@ -844,6 +845,70 @@ function registerIpc({
       classroom.activityReporter[fn](data);
       return { ok: true };
     });
+  }
+
+  // --- NovaLink LAN discovery & hosting ------------------------------------
+  //
+  // Narrow, purpose-built channels — the renderer never gets a generic socket,
+  // spawn, or fetch. Discovery/hookup and host control are gated on the `lan`
+  // service being present, so the rest of the IPC surface (and its channel
+  // count) is unchanged on installs that do not wire it in. Selecting a host or
+  // typing an IP only configures the EXISTING Live client's base URL; the user
+  // still authenticates normally. We never auto-trust a discovered host.
+  if (lan) {
+    const lanStr = (value, max, label, { required = false } = {}) => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (required && !text) throw new Error(`${label} is required.`);
+      return text.slice(0, max);
+    };
+    const lanPort = (value) => {
+      if (value === undefined || value === null || value === '') return undefined;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : undefined;
+    };
+
+    // Client: search the local network for a running NovaLink host.
+    handle('novalinkLan:scan', () => lan.scan());
+    handle('novalinkLan:stopScan', () => lan.stopScan());
+    handle('novalinkLan:listHosts', () => ({ hosts: lan.listHosts() }));
+    handle('novalinkLan:status', () => ({
+      scanning: Boolean(lan.status().scanning),
+      hosts: lan.listHosts(),
+    }));
+
+    // Choose a discovered host: resolve it to a base URL, then point the real
+    // client at it. Returns the URL + host name so the UI can confirm. The
+    // credential is NOT touched here — sign-in is a separate, explicit step.
+    handle('novalinkLan:selectHost', async (_event, payload = {}) => {
+      const hostId = lanStr(payload.hostId, 64, 'Host id', { required: true });
+      const chosen = lan.selectHost(hostId);
+      if (!chosen || !chosen.baseUrl) throw new Error('That host is no longer available. Search again.');
+      // Hand off to the existing client so auth/socket behavior is identical to
+      // any other NovaLink connection.
+      if (novalink) await novalink.configure({ baseUrl: chosen.baseUrl });
+      return { ok: true, baseUrl: chosen.baseUrl, name: chosen.name, host: chosen.host, ips: chosen.ips, port: chosen.port, tls: Boolean(chosen.tls) };
+    });
+
+    // Manual IP fallback for networks that block multicast. Validates the
+    // address/port in the main process (manualBaseUrl throws on anything odd).
+    handle('novalinkLan:manualConnect', async (_event, payload = {}) => {
+      const built = lan.manualConnect({
+        address: lanStr(payload.address, 64, 'IP address'),
+        port: lanPort(payload.port),
+        tls: payload.tls === true,
+      });
+      if (novalink) await novalink.configure({ baseUrl: built.baseUrl });
+      return { ok: true, baseUrl: built.baseUrl };
+    });
+
+    // Host: start/stop THIS machine's NovaLink Live server (the existing
+    // link-server), which also turns on the UDP advertiser for other installs.
+    handle('novalinkLan:startHost', (_event, payload = {}) => lan.startHost({
+      port: (() => { const n = lanPort(payload.port); return Number.isInteger(n) ? n : undefined; })(),
+      displayName: lanStr(payload.displayName, 64, 'Host name') || undefined,
+    }));
+    handle('novalinkLan:stopHost', () => lan.stopHost());
+    handle('novalinkLan:hostStatus', () => lan.hostStatus());
   }
 
   return { channelCount: handlers.size };

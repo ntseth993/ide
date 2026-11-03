@@ -747,3 +747,95 @@ describe('deploy / hosting IPC contract', () => {
     expect(onlyDeploy.has('deploy:connections')).toBe(false);
   });
 });
+
+describe('NovaLink LAN discovery & hosting IPC', () => {
+  // The LAN channels are gated on a `lan` service, so the base channel counts
+  // elsewhere in this file (109 / 132 / 136) are unchanged. Here we register a
+  // fresh surface with a `lan` stub + the shared `novalink` stub and pin the
+  // handoff: selecting or typing an address must reconfigure the real client
+  // and must never touch credentials.
+  const modPromise = import('../electron/ipc/registerIpc');
+
+  function makeLan() {
+    return {
+      scan: vi.fn(() => ({ scanning: true, hosts: [] })),
+      stopScan: vi.fn(() => ({ scanning: false, hosts: [] })),
+      listHosts: vi.fn(() => [{ id: 'h1', name: 'Lab-PC', baseUrl: 'http://192.168.1.42:10000' }]),
+      status: vi.fn(() => ({ scanning: true })),
+      selectHost: vi.fn(() => ({ baseUrl: 'http://192.168.1.42:10000', name: 'Lab-PC', host: 'lab', ips: ['192.168.1.42'], port: 10000, tls: false })),
+      manualConnect: vi.fn((payload) => ({ baseUrl: `http://${payload.address}:${payload.port}` })),
+      startHost: vi.fn(() => ({ running: true, port: 10000 })),
+      stopHost: vi.fn(() => ({ running: false })),
+      hostStatus: vi.fn(() => ({ running: true })),
+    };
+  }
+
+  async function registerLan(overrides = {}) {
+    const mod = await modPromise;
+    const map = new Map();
+    const lan = makeLan();
+    const result = mod.registerIpc({
+      ...services,
+      lan,
+      ...overrides,
+      ipcMain: { handle: (c, f) => map.set(c, f) },
+    });
+    return { result, map, lan };
+  }
+
+  it('registers the nine LAN channels only when a `lan` service is present', async () => {
+    const { result, map } = await registerLan();
+    // 109 base + 9 LAN channels.
+    expect(result.channelCount).toBe(118);
+    expect(map.size).toBe(118);
+    for (const ch of ['novalinkLan:scan', 'novalinkLan:stopScan', 'novalinkLan:listHosts', 'novalinkLan:status',
+      'novalinkLan:selectHost', 'novalinkLan:manualConnect', 'novalinkLan:startHost', 'novalinkLan:stopHost', 'novalinkLan:hostStatus']) {
+      expect(map.has(ch)).toBe(true);
+    }
+
+    // Without `lan`, none of the LAN surface exists (base count is unchanged).
+    const mod = await modPromise;
+    const bare = new Map();
+    mod.registerIpc({ ...services, ipcMain: { handle: (c, f) => bare.set(c, f) } });
+    expect(bare.size).toBe(109);
+    expect([...bare.keys()].some((k) => k.startsWith('novalinkLan:'))).toBe(false);
+  });
+
+  it('selectHost configures the existing client and never leaks a credential', async () => {
+    const { map, lan } = await registerLan();
+    const handler = map.get('novalinkLan:selectHost');
+    const out = await handler({ sender: {} }, { hostId: 'h1' });
+    expect(lan.selectHost).toHaveBeenCalledWith('h1');
+    expect(out.baseUrl).toBe('http://192.168.1.42:10000');
+    expect(out.ok).toBe(true);
+    // No password/token field is ever returned to the renderer.
+    expect(out).not.toHaveProperty('token');
+    // The handoff reconfigured the real Live client to the discovered URL.
+    expect(services.novalink.configure).toHaveBeenCalledWith({ baseUrl: 'http://192.168.1.42:10000' });
+  });
+
+  it('selectHost rejects an unknown host id', async () => {
+    const { map } = await registerLan({
+      lan: { ...makeLan(), selectHost: vi.fn(() => null) },
+    });
+    await expect(map.get('novalinkLan:selectHost')({ sender: {} }, { hostId: 'gone' })).rejects.toThrow(/no longer available/i);
+    await expect(map.get('novalinkLan:selectHost')({ sender: {} }, {})).rejects.toThrow(/Host id is required/i);
+  });
+
+  it('manualConnect validates the address via the main process', async () => {
+    const { map, lan } = await registerLan();
+    const out = await map.get('novalinkLan:manualConnect')({ sender: {} }, { address: '192.168.1.9', port: 10000 });
+    expect(lan.manualConnect).toHaveBeenCalledWith({ address: '192.168.1.9', port: 10000, tls: false });
+    expect(out.baseUrl).toBe('http://192.168.1.9:10000');
+  });
+
+  it('start/stop host toggle the local server', async () => {
+    const { map, lan } = await registerLan();
+    await map.get('novalinkLan:startHost')({ sender: {} }, { port: 10050 });
+    expect(lan.startHost).toHaveBeenCalledWith({ port: 10050, displayName: undefined });
+    await map.get('novalinkLan:stopHost')({ sender: {} });
+    expect(lan.stopHost).toHaveBeenCalled();
+    const status = await map.get('novalinkLan:hostStatus')({ sender: {} });
+    expect(status.running).toBe(true);
+  });
+});

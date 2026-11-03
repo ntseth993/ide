@@ -69,10 +69,13 @@ jobs:
       - name: Build renderer
         run: npm run build
         env:
-          # NOVA_PACK=1 (not NODE_ENV=production) makes prebuild bake a real
-          # server URL without making `npm ci` skip devDependencies.
+          # NOVA_PACK=1 (not NODE_ENV=production) makes prebuild run the packager
+          # path without making `npm ci` skip devDependencies.
+          # LAN-first: with no NOVALINK_LIVE_URL repo var the packaged app ships
+          # unconfigured and connects via NovaLink LAN discovery. Set the repo var
+          # to a real https:// host only if you deliberately want a cloud backend.
           NOVA_PACK: '1'
-          NOVALINK_LIVE_URL: ${{ vars.NOVALINK_LIVE_URL || 'https://novalink-live.onrender.com' }}
+          NOVALINK_LIVE_URL: ${{ vars.NOVALINK_LIVE_URL }}
       - name: Package installers (core targets)
         shell: bash
         run: |

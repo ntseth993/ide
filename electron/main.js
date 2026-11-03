@@ -25,6 +25,7 @@ const { createAuthFlow } = require('./services/authFlow');
 const fsService = require('./services/fsService');
 const { createAiService } = require('./services/aiService');
 const { createNovaLink } = require('./services/novalink');
+const { createLanDiscovery, createLanHost, manualBaseUrl } = require('./services/novalink');
 const liveConfig = require('./services/novalink/liveConfig');
 const { createNovaDbService } = require('./services/novadb/novaDbService');
 const { createNovaDbServer } = require('./services/novadb/novaDbServer');
@@ -64,6 +65,7 @@ let runtimeService = null;
 let authService = null;
 let authFlow = null;
 let novalinkService = null;
+let lanService = null;
 let novaDbService = null;
 let novaDbServer = null;
 let deployService = null;
@@ -530,6 +532,39 @@ function wireServices() {
   const classroomReporter = createActivityReporter({ enrollmentStore: classroomEnrollment, liveClient: novalinkService, logger });
   const classroom = { enrollmentStore: classroomEnrollment, activityReporter: classroomReporter };
 
+  // NovaLink LAN. Two helpers over the SAME link-server, created once here at
+  // app scope (not per window) so a renderer reload can never spawn a duplicate
+  // background scanner or a second host process:
+  //   - lanDiscovery: a UDP scanner that finds hosts advertising on the Wi-Fi
+  //     and yields a plain http://ip:port base URL for the client above.
+  //   - lanHost: starts/stops the existing link-server so THIS PC can host.
+  // Neither opens a socket until the user asks from the NovaLink view; nothing
+  // here bypasses auth — a discovered host still needs real credentials.
+  const lanDiscovery = createLanDiscovery({
+    logger,
+    onHosts: (hosts) => broadcast('novalinkLan:hosts', hosts),
+  });
+  const lanHost = createLanHost({
+    logger,
+    dataDir: path.join(USER_DATA, 'novalink-lan-host'),
+  });
+  const pushHostStatus = () => { try { broadcast('novalinkLan:host-status', lanHost.status()); } catch { /* window gone */ } };
+  lanService = {
+    scan() { lanDiscovery.start(); return { scanning: lanDiscovery.status().scanning, hosts: lanDiscovery.listHosts() }; },
+    stopScan() { lanDiscovery.stop(); return { scanning: false, hosts: lanDiscovery.listHosts() }; },
+    listHosts() { return lanDiscovery.listHosts(); },
+    status() { return lanDiscovery.status(); },
+    selectHost(id) { return lanDiscovery.selectHost(id); },
+    manualConnect(payload) { return { baseUrl: manualBaseUrl(payload) }; },
+    startHost(options) { const s = lanHost.start(options); pushHostStatus(); return s; },
+    stopHost() { const s = lanHost.stop(); pushHostStatus(); return s; },
+    hostStatus() { return lanHost.status(); },
+    dispose() {
+      try { lanDiscovery.stop(); } catch { /* already stopped */ }
+      try { lanHost.stop(); } catch { /* already stopped */ }
+    },
+  };
+
   // NovaDB — the IDE's own database engine, persisted as a JSON snapshot under
   // userData so schemas and records survive a restart. The Database workspace
   // and the `novadb` terminal command both drive this single instance.
@@ -629,6 +664,7 @@ if (!gotLock) {
       registry,
       runtime,
       novalink: novalinkService,
+      lan: lanService,
       classroom,
       novadb,
       novadbConnector,
@@ -663,6 +699,7 @@ if (!gotLock) {
     aiService?.dispose();
     authFlow?.cancel?.();
     novalinkService?.dispose();
+    lanService?.dispose?.();
     previewServer?.dispose?.();
     novaDbServer?.dispose?.();
     novaDbService?.dispose?.();

@@ -540,6 +540,18 @@ export const client = {
   novalinkLiveClassroomStatus() { requireDesktop(); return nova.novalinkLiveClassroomStatus(); },
   novalinkLiveClassroomReport(payload) { requireDesktop(); return nova.novalinkLiveClassroomReport(payload); },
 
+  // LAN discovery & hosting. Narrow wrappers over the main-process scanner and
+  // host manager; the renderer never touches a socket or a child process.
+  novalinkLanScan() { requireBridgeMethod('novalinkLanScan', 'LAN discovery'); return nova.novalinkLanScan(); },
+  novalinkLanStopScan() { requireDesktop(); return nova.novalinkLanStopScan(); },
+  novalinkLanListHosts() { requireDesktop(); return nova.novalinkLanListHosts(); },
+  novalinkLanStatus() { requireDesktop(); return nova.novalinkLanStatus(); },
+  novalinkLanSelectHost(payload) { requireBridgeMethod('novalinkLanSelectHost', 'Connecting to a discovered host'); return nova.novalinkLanSelectHost(payload); },
+  novalinkLanManualConnect(payload) { requireBridgeMethod('novalinkLanManualConnect', 'Manual host connection'); return nova.novalinkLanManualConnect(payload); },
+  novalinkLanStartHost(payload) { requireBridgeMethod('novalinkLanStartHost', 'LAN hosting'); return nova.novalinkLanStartHost(payload); },
+  novalinkLanStopHost() { requireBridgeMethod('novalinkLanStopHost', 'LAN hosting'); return nova.novalinkLanStopHost(); },
+  novalinkLanHostStatus() { requireDesktop(); return nova.novalinkLanHostStatus(); },
+
   // main -> renderer subscriptions
   onNovaLinkLiveEvent(callback) {
     return nova?.onNovaLinkLiveEvent ? nova.onNovaLinkLiveEvent(callback) : () => {};
@@ -549,5 +561,11 @@ export const client = {
   },
   onNovaLinkLiveOpenConversation(callback) {
     return nova?.onNovaLinkLiveOpenConversation ? nova.onNovaLinkLiveOpenConversation(callback) : () => {};
+  },
+  onNovaLinkLanHosts(callback) {
+    return nova?.onNovaLinkLanHosts ? nova.onNovaLinkLanHosts(callback) : () => {};
+  },
+  onNovaLinkLanHostStatus(callback) {
+    return nova?.onNovaLinkLanHostStatus ? nova.onNovaLinkLanHostStatus(callback) : () => {};
   },
 };

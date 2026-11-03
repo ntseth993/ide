@@ -228,6 +228,20 @@ export const mockNova = {
   novalinkLiveClassroomEnroll: vi.fn(async (payload) => ({ ok: true, enrollment: { enrollmentId: 'e'.repeat(8) + '-0000-0000-0000-000000000000', ...payload } })),
   novalinkLiveClassroomUnenroll: vi.fn(async () => ({ ok: true })),
   novalinkLiveClassroomReport: vi.fn(async (payload) => ({ ok: true, ...payload })),
+  // NovaLink LAN discovery & hosting (electron/services/novalink/lanDiscovery.js
+  // + lanHost.js via the novalinkLan:* IPC channels). Defaults are the idle
+  // shape so unrelated NovaLink tests render without a discovered host.
+  novalinkLanScan: vi.fn(async () => ({ scanning: true, hosts: [] })),
+  novalinkLanStopScan: vi.fn(async () => ({ scanning: false, hosts: [] })),
+  novalinkLanListHosts: vi.fn(async () => ({ hosts: [] })),
+  novalinkLanStatus: vi.fn(async () => ({ scanning: false, hosts: [] })),
+  novalinkLanSelectHost: vi.fn(async (payload) => ({ ok: true, baseUrl: 'http://192.168.1.42:10000', name: 'Lab-PC', host: 'lab', ips: ['192.168.1.42'], port: 10000, tls: false, hostId: payload?.hostId })),
+  novalinkLanManualConnect: vi.fn(async (payload) => ({ ok: true, baseUrl: `http://${payload?.address || '127.0.0.1'}:${payload?.port || 10000}` })),
+  novalinkLanStartHost: vi.fn(async () => ({ running: true, pid: 4242, port: 10000, host: '0.0.0.0', displayName: '', ips: ['192.168.1.42'], urls: ['http://192.168.1.42:10000', 'http://127.0.0.1:10000'], lastError: null })),
+  novalinkLanStopHost: vi.fn(async () => ({ running: false, pid: null, port: 10000, host: '0.0.0.0', displayName: '', ips: [], urls: [], lastError: null })),
+  novalinkLanHostStatus: vi.fn(async () => ({ running: false, pid: null, port: 10000, host: '0.0.0.0', displayName: '', ips: [], urls: [], lastError: null })),
+  onNovaLinkLanHosts: vi.fn(() => () => {}),
+  onNovaLinkLanHostStatus: vi.fn(() => () => {}),
   onNovaLinkLiveEvent: vi.fn(() => () => {}),
   onNovaLinkLiveStatus: vi.fn(() => () => {}),
   onNovaLinkLiveOpenConversation: vi.fn(() => () => {}),

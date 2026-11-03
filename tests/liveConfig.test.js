@@ -3,8 +3,8 @@
  *
  * Two modules are under test:
  *   - scripts/generate-live-config.js  (writes liveConfig.generated.js at
- *     packaging time; hard-fails on a placeholder / empty / non-https URL
- *     when NODE_ENV=production)
+ *     packaging time; LAN-first so an empty URL is allowed, but a placeholder
+ *     or non-https URL is still a hard failure when NODE_ENV=production)
  *   - electron/services/novalink/liveConfig.js  (reads the generated file
  *     at main-process boot; falls back to process.env.NOVALINK_LIVE_URL)
  *
@@ -126,12 +126,18 @@ describe('scripts/generate-live-config.js main()', () => {
     return require('../scripts/generate-live-config.js');
   }
 
-  it('throws on production build with empty URL', () => {
+  it('LAN-first: production build with empty URL writes an unconfigured file rather than throwing', () => {
     process.env.NODE_ENV = 'production';
     delete process.env.NOVA_PACK;
     process.env.NOVALINK_LIVE_URL = '';
-    const { main } = freshGenerator();
-    expect(main).toThrow(/NOVALINK_LIVE_URL is required/);
+    withTempOut(({ calls }) => {
+      const { main } = freshGenerator();
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      expect(() => main()).not.toThrow();
+      writeSpy.mockRestore();
+      expect(calls).toHaveLength(1);
+      expect(calls[0].body).toMatch(/baseUrl: ""/);
+    });
   });
 
   it('throws on production build with malformed URL', () => {

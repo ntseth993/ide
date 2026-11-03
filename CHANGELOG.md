@@ -45,6 +45,39 @@ versioning uses [Semantic Versioning](https://semver.org/).
 - No successful deployment has been executed against a live provider
   account from this build yet; see `SECURITY.md`.
 
+## [0.5.0] — 2026-11-03
+
+### Added
+- **NovaLink LAN discovery.** Windows PCs on the same Wi-Fi now find each
+  other automatically — no IP typing, no cloud, no paid hosting. A host
+  advertises itself over UDP multicast/broadcast (`239.255.77.77:53531`,
+  Node's built-in `dgram`, zero new dependencies); other installs query,
+  validate the replies, and connect through the existing `/link` WebSocket
+  and normal sign-in. A compact LAN panel surfaces Searching / Host Found /
+  Connecting / Connected / Disconnected, with a manual-IP fallback for
+  networks that block multicast.
+- **Host on this computer.** One click starts the *existing* NovaLink Live
+  server (accounts, chat, presence, SQLite, `/link`) inside the packaged app
+  using Electron's bundled Node — no separate install. A single host child is
+  enforced, so reloading the window never spawns duplicates.
+- **LAN-first installer.** Packaged builds no longer bake a cloud endpoint:
+  the app boots unconfigured and is pointed at a discovered host at runtime.
+  Set the `NOVALINK_LIVE_URL` repo variable only if you deliberately want a
+  cloud backend.
+
+### Security
+- Discovery packets carry no passwords, tokens, API keys or message content;
+  every inbound datagram is size- and field-validated before it can cause a
+  reply. Discovery is never trust — a discovered host still authenticates
+  through the existing flow. UDP runs in the main process behind
+  `contextIsolation`; the renderer reaches it only through narrow
+  `novalinkLan:*` IPC channels. Loopback, VPN and virtual/Hyper-V adapters are
+  excluded from advertisement. See `NOVALINK_LAN.md`.
+
+### Testing
+- New suites for the packet layer, the client scanner, the host spawner, the
+  LAN IPC channels and the connection panel; full run 913 passing.
+
 ## [0.2.0] — 2026-10-18
 
 ### Security

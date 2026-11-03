@@ -36,6 +36,7 @@ const { createEvents } = require('./events');
 const { createRoutes } = require('./routes');
 const { createAdmin } = require('./admin');
 const { createAdminHub } = require('./adminHub');
+const { createDiscovery } = require('./discovery');
 const { completeUpgrade } = require('./ws');
 
 const SOCKET_PATH = '/link';
@@ -191,6 +192,21 @@ function startServer(overrides = {}) {
   });
 
   hub.start();
+
+  // LAN discovery: opt-in, independent UDP socket. Off unless LINK_DISCOVERY=1,
+  // so a plain `npm start` never broadcasts. A failure here must never take the
+  // messaging server down, so it is fully guarded.
+  let discovery = null;
+  if (config.discovery && config.discovery.enabled) {
+    try {
+      discovery = createDiscovery({ config, logger });
+      discovery.start();
+    } catch (error) {
+      logger.warn?.('discovery start failed', { error: String(error.message || error) });
+      discovery = null;
+    }
+  }
+
   const sweeps = setInterval(() => {
     try {
       attachments.sweep();
@@ -210,6 +226,7 @@ function startServer(overrides = {}) {
     if (closed) return Promise.resolve();
     closed = true;
     clearInterval(sweeps);
+    if (discovery) { try { discovery.stop(); } catch { /* already closed */ } }
     hub.stop();
     // Not just closeAll(): an `active` row that survives this process would be
     // handed back to a reconnecting client as a live call it is no longer in.
@@ -235,7 +252,7 @@ function startServer(overrides = {}) {
     });
   }
 
-  return { server, config, store, logger, hub, routes, limiter, close, events, attachments, chat, calls, accounts, connections, presence, admin, adminHub };
+  return { server, config, store, logger, hub, routes, limiter, close, events, attachments, chat, calls, accounts, connections, presence, admin, adminHub, discovery };
 }
 
 /** `npm start` entry. Programmatic callers use startServer() and close(). */

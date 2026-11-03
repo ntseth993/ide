@@ -1,6 +1,6 @@
 {
   "name": "novacode-ide",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "NovaCode IDE - AI-powered desktop development environment",
   "main": "electron/main.js",
   "bin": {
@@ -64,6 +64,12 @@
     "files": [
       "dist/**",
       "electron/**",
+      "link-server/**",
+      "!link-server/data/**",
+      "!link-server/**/*.sqlite",
+      "!link-server/**/*.sqlite-journal",
+      "!link-server/.env",
+      "!link-server/node_modules/**",
       "package.json"
     ],
     "extraResources": [

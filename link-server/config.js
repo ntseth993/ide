@@ -135,6 +135,21 @@ const port = int(
     // Classroom monitor: first account matching this username gets role='admin'.
     adminBootstrapUsername: str(env.ADMIN_BOOTSTRAP_USERNAME, ''),
     adminRetentionHours: int(env.ADMIN_RETENTION_HOURS, 24, { min: 1, max: 8760 }),
+
+    // LAN discovery (opt-in): advertise this server to NovaCode installs on the
+    // same local network over UDP multicast + broadcast so they can find it
+    // without typing an IP. Announce packets carry only host/port/name/version —
+    // never passwords, tokens, or message content. Off by default: a laptop must
+    // never broadcast its presence until the operator explicitly enables hosting.
+    discovery: {
+      enabled: bool(env.LINK_DISCOVERY, false),
+      group: str(env.LINK_DISCOVERY_GROUP, '239.255.77.77'),
+      port: int(env.LINK_DISCOVERY_PORT, 53531, { min: 1024, max: 65535 }),
+      displayName: str(env.LINK_DISCOVERY_NAME, os.hostname()),
+      intervalMs: int(env.LINK_DISCOVERY_INTERVAL_MS, 10000, { min: 1000, max: 600000 }),
+      ttlMs: int(env.LINK_DISCOVERY_TTL_MS, 30000, { min: 2000, max: 120000 }),
+      excludeVpn: bool(env.LINK_DISCOVERY_EXCLUDE_VPN, true),
+    },
   };
 
   return config;

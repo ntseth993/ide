@@ -223,6 +223,23 @@ const api = {
   novalinkLiveClassroomStatus: () => invoke('novalinkLive:classroomStatus'),
   novalinkLiveClassroomReport: (payload) => invoke('novalinkLive:classroomReport', payload || {}),
 
+  // LAN discovery & hosting. The main process owns the UDP scanner and the
+  // link-server child; these channels only trigger actions and read status.
+  novalinkLanScan: () => invoke('novalinkLan:scan'),
+  novalinkLanStopScan: () => invoke('novalinkLan:stopScan'),
+  novalinkLanListHosts: () => invoke('novalinkLan:listHosts'),
+  novalinkLanStatus: () => invoke('novalinkLan:status'),
+  novalinkLanSelectHost: (payload) => invoke('novalinkLan:selectHost', payload || {}),
+  novalinkLanManualConnect: (payload) => invoke('novalinkLan:manualConnect', payload || {}),
+  novalinkLanStartHost: (payload) => invoke('novalinkLan:startHost', payload || {}),
+  novalinkLanStopHost: () => invoke('novalinkLan:stopHost'),
+  novalinkLanHostStatus: () => invoke('novalinkLan:hostStatus'),
+
+  // main -> renderer: discovered LAN hosts (pushed as the list changes).
+  onNovaLinkLanHosts: (callback) => subscribe('novalinkLan:hosts', callback),
+  // main -> renderer: this machine's hosting status.
+  onNovaLinkLanHostStatus: (callback) => subscribe('novalinkLan:host-status', callback),
+
   // main -> renderer: every server-pushed frame in one stream.
   onNovaLinkLiveEvent: (callback) => subscribe('novalinkLive:event', callback),
   // main -> renderer: signed snapshot of the connection state (used by StatusBar).
