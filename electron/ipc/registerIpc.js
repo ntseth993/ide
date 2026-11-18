@@ -12,7 +12,8 @@ const fsp = require('fs').promises;
 const path = require('path');
 const pathGuard = require('../services/pathGuard');
 const fsService = require('../services/fsService');
-const { describeProviders } = require('../services/ai/providers');
+const agentPolicy = require('../services/agentPolicy');
+const { selectableProviders } = require('../services/ai/providers');
 const { providerList, OAUTH_PROVIDERS } = require('../services/oauthProviders');
 
 const EXTERNAL_URL = /^https?:\/\//i;
@@ -215,11 +216,129 @@ function registerIpc({
 
   handle('terminal:profiles', () => terminal.profiles());
 
-  // AI Agent runs a command to completion and gets its captured output back.
-  // Confined to the workspace; never throws (resolves with a structured error).
+  // Headless command capture for internal features (e.g. deploy build). The AI
+  // assistant has NO route to this channel — it can only propose an edit to the
+  // open file, gated behind the diff review — so this is not an AI capability.
   handle('terminal:run-capture', (_event, payload = {}) => {
     if (!payload.root) throw new pathGuard.PathGuardError('Open a folder first.');
     return terminal.runCapture(payload);
+  });
+
+  // --- AI Agent (autonomous, backend-governed) ------------------------------
+  // The Agent applies ordinary workspace operations without an approval dialog,
+  // so the safety the user would give by clicking "Run" lives HERE instead: every
+  // route re-checks the policy before touching disk or spawning a process.
+  //   * file targets are confined to the workspace by pathGuard (inside fsService)
+  //   * secret files (.env, key pairs, token stores) are refused for the agent
+  //   * destructive / system terminal commands are refused by agentPolicy
+  // These channels are separate from the explorer's fs:* / terminal:* routes on
+  // purpose: the human may edit their own .env, the autonomous agent may not.
+  const requireAgentRoot = (root) => {
+    if (!root) throw new pathGuard.PathGuardError('Open a folder first.');
+    return root;
+  };
+  const assertNotSecret = (target) => {
+    if (agentPolicy.isSecretPath(target)) {
+      throw new Error('That file looks like a credential store; the agent will not read or change it.');
+    }
+  };
+
+  handle('agent:read-file', async (_event, { root, path: filePath } = {}) => {
+    requireAgentRoot(root);
+    assertNotSecret(filePath);
+    const text = await fs.readFile(root, filePath);
+    logger.info('agent read', { filePath });
+    return { content: text };
+  });
+
+  handle('agent:list-dir', (_event, { root, target } = {}) => {
+    requireAgentRoot(root);
+    return fs.readTree(root, target || root);
+  });
+
+  handle('agent:search', (_event, { root, query, isRegex, caseSensitive } = {}) => {
+    requireAgentRoot(root);
+    return fs.search(root, { query, isRegex, caseSensitive });
+  });
+
+  // Create or overwrite a file, journalling the previous contents first so the
+  // change is reversible from Change History (and the on-screen Undo action).
+  handle('agent:write-file', async (_event, { root, path: filePath, content } = {}) => {
+    requireAgentRoot(root);
+    assertNotSecret(filePath);
+    if (typeof content !== 'string') throw new Error('File content must be text.');
+    const abs = pathGuard.resolveWithin(root, filePath);
+    let previous = null;
+    try {
+      previous = await fs.readFile(root, abs);
+    } catch {
+      previous = null; // the agent is creating this file
+    }
+    const entry = history.record({ root, filePath: abs, previous, content, kind: 'agent-edit' });
+    await fs.writeFile(root, abs, content);
+    logger.info('agent write', { filePath: abs, created: previous === null });
+    return { id: entry.id, ts: entry.ts, filePath: abs, created: previous === null };
+  });
+
+  handle('agent:create-folder', async (_event, { root, path: folderPath } = {}) => {
+    requireAgentRoot(root);
+    const created = await fs.mkdirp(root, folderPath);
+    logger.info('agent mkdir', { folderPath });
+    return created;
+  });
+
+  // Delete inside the workspace runs automatically. Prefer a recoverable trash
+  // so an over-eager deletion can be undone; fall back to a hard remove only
+  // when the OS refuses to trash (e.g. a special volume).
+  handle('agent:delete-path', async (_event, { root, path: target } = {}) => {
+    requireAgentRoot(root);
+    assertNotSecret(target);
+    const abs = pathGuard.resolveWithin(root, target);
+    if (abs === path.resolve(root)) throw new pathGuard.PathGuardError('The workspace folder itself cannot be deleted.');
+    let trashed = false;
+    try {
+      if (shell && typeof shell.trashItem === 'function') {
+        await shell.trashItem(abs);
+        trashed = true;
+      }
+    } catch {
+      trashed = false;
+    }
+    if (!trashed) await fs.remove(root, target);
+    logger.info('agent delete', { target, trashed });
+    return { ok: true, trashed, filePath: abs };
+  });
+
+  handle('agent:rename-path', async (_event, { root, path: target, newName } = {}) => {
+    requireAgentRoot(root);
+    assertNotSecret(target);
+    assertNotSecret(newName);
+    const renamed = await fs.rename(root, target, newName);
+    logger.info('agent rename', { target, newName });
+    return renamed;
+  });
+
+  handle('agent:move-path', async (_event, { root, path: target, destDir } = {}) => {
+    requireAgentRoot(root);
+    assertNotSecret(target);
+    const moved = await fs.move(root, target, destDir || root);
+    logger.info('agent move', { target, destDir });
+    return moved;
+  });
+
+  // Terminal command from the Agent. Policy first, then a captured run whose
+  // environment has provider tokens stripped (childEnv) — so a build script can
+  // never read the credential that publishes it. Blocked commands resolve with
+  // a structured reason instead of throwing, so the agent loop can react.
+  handle('agent:run-command', async (_event, { root, cwd, command, profile } = {}) => {
+    requireAgentRoot(root);
+    const verdict = agentPolicy.assertCommand(command);
+    if (!verdict.ok) {
+      logger.warn('agent command blocked', { command: String(command).slice(0, 200), reason: verdict.reason });
+      return { output: '', code: null, signal: null, error: verdict.reason, blocked: true };
+    }
+    logger.info('agent run', { command });
+    return terminal.runCapture({ root, cwd, command, profile });
   });
 
   // --- settings ---------------------------------------------------------------
@@ -245,7 +364,7 @@ function registerIpc({
     return { provider, hasKey: Boolean(source) || Boolean(process.env[envVar]), source };
   });
 
-  handle('ai:providers', () => describeProviders());
+  handle('ai:providers', () => selectableProviders());
 
   handle('ai:check-connection', (_event, { provider, baseUrl } = {}) => ai.checkConnection({ provider, baseUrl }));
 
@@ -909,6 +1028,72 @@ function registerIpc({
     }));
     handle('novalinkLan:stopHost', () => lan.stopHost());
     handle('novalinkLan:hostStatus', () => lan.hostStatus());
+  }
+
+  // --- NovaLink P2P automatic local sharing ------------------------------------
+  //
+  // Peer-to-peer sharing without requiring a server. Automatically discovers
+  // peers on the same network and enables direct file/message/image sharing.
+  if (lan && lan.p2p) {
+    const p2p = lan.p2p;
+    const p2pStr = (value, max, label, { required = false } = {}) => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (required && !text) throw new Error(`${label} is required.`);
+      return text.slice(0, max);
+    };
+    const p2pId = (value) => {
+      const text = typeof value === 'string' ? value.trim() : '';
+      if (!text) throw new Error('Peer ID is required.');
+      return text.slice(0, 64);
+    };
+
+    // P2P service lifecycle
+    handle('novalinkP2p:start', () => p2p.start());
+    handle('novalinkP2p:stop', () => p2p.stop());
+    handle('novalinkP2p:status', () => p2p.status());
+
+    // Identity management
+    handle('novalinkP2p:getIdentity', () => p2p.getIdentity());
+    handle('novalinkP2p:updateDisplayName', (_event, payload = {}) => {
+      const name = p2pStr(payload.displayName, 32, 'Display name');
+      return p2p.updateDisplayName(name);
+    });
+
+    // Peer discovery and connections
+    handle('novalinkP2p:getDiscoveredPeers', () => ({ peers: p2p.getDiscoveredPeers() }));
+    handle('novalinkP2p:getConnectedPeers', () => ({ peers: p2p.getConnectedPeers() }));
+    handle('novalinkP2p:connectToPeer', async (_event, payload = {}) => {
+      const peerId = p2pId(payload.peerId);
+      return p2p.connectToPeer(peerId);
+    });
+    handle('novalinkP2p:disconnectPeer', async (_event, payload = {}) => {
+      const peerId = p2pId(payload.peerId);
+      return p2p.disconnectPeer(peerId);
+    });
+
+    // Messaging and file sharing
+    handle('novalinkP2p:sendMessage', async (_event, payload = {}) => {
+      const peerId = p2pId(payload.peerId);
+      const content = p2pStr(payload.content, 10000, 'Message content', { required: true });
+      return p2p.sendMessage(peerId, content);
+    });
+    handle('novalinkP2p:sendFile', async (_event, payload = {}) => {
+      const peerId = p2pId(payload.peerId);
+      const filePath = p2pStr(payload.filePath, 500, 'File path', { required: true });
+      return p2p.sendFile(peerId, filePath);
+    });
+    handle('novalinkP2p:sendImage', async (_event, payload = {}) => {
+      const peerId = p2pId(payload.peerId);
+      const imagePath = p2pStr(payload.imagePath, 500, 'Image path', { required: true });
+      return p2p.sendImage(peerId, imagePath);
+    });
+
+    // Auto-connect toggle
+    handle('novalinkP2p:setAutoConnect', (_event, payload = {}) => {
+      const enabled = payload.enabled === true;
+      p2p.setAutoConnect(enabled);
+      return { ok: true };
+    });
   }
 
   return { channelCount: handlers.size };

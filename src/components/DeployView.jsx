@@ -39,7 +39,34 @@ const CLI_RECIPES = [
   { id: 'surge', label: 'Surge', command: 'npx surge ./dist', note: 'Static hosting with a free *.surge.sh domain.' },
 ];
 
-export default function DeployView({ root, onNotify, asTab = false }) {
+// Build a concrete, actionable instruction for the agent from any Deploy-phase
+// problem: which step failed, the exact messages, and the ask to fix it in the
+// workspace and re-run the step. Used by every phase (detect/build/preview/export).
+function makeFixPrompt(phase, details) {
+  const lines = (Array.isArray(details) ? details : [details]).filter((l) => l && String(l).trim());
+  const list = lines.length ? lines.map((l) => `- ${l}`).join('\n') : '- The step could not complete.';
+  return [
+    `NovaCode hit a problem during "${phase}" while deploying this project:`,
+    '',
+    list,
+    '',
+    'Investigate the relevant project files, fix the root cause, and apply the changes directly (edit the files and/or run safe setup commands). Then re-run the step that was failing to confirm it is fixed, and briefly explain what you changed.',
+  ].join('\n');
+}
+
+// One shared "Fix with AI" action, rendered for any phase that produced a
+// problem. Handing off just the message keeps every call site tiny.
+function FixButton({ onFixWithAI, phase, details }) {
+  if (!onFixWithAI) return null;
+  return (
+    <div className="dp-actions">
+      <button type="button" className="small primary" onClick={() => onFixWithAI(makeFixPrompt(phase, details))}>Fix with AI</button>
+      <span className="dp-muted">Send this problem to the assistant — it will diagnose and apply a fix in Agent mode.</span>
+    </div>
+  );
+}
+
+export default function DeployView({ root, onNotify, asTab = false, onFixWithAI }) {
   const [profile, setProfile] = useState(null);
   const [detecting, setDetecting] = useState(false);
   const [buildCommand, setBuildCommand] = useState('');
@@ -167,6 +194,9 @@ export default function DeployView({ root, onNotify, asTab = false }) {
         <div className="dp-notice">Open a project folder to detect a buildable target.</div>
       )}
       {error && <div className="dp-error" role="alert">{error}</div>}
+      {error && isDesktop && hasRoot && (
+        <FixButton onFixWithAI={onFixWithAI} phase="deploy" details={[error]} />
+      )}
 
       <div className="dp-body">
         {/* ---- 1 · detected profile ---- */}
@@ -213,6 +243,9 @@ export default function DeployView({ root, onNotify, asTab = false }) {
           {profile?.warnings?.length > 0 && (
             <ul className="dp-warnings">{profile.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
           )}
+          {profile?.blockers?.length > 0 && isDesktop && hasRoot && (
+            <FixButton onFixWithAI={onFixWithAI} phase="project detection" details={[...(profile.blockers || []), ...(profile.warnings || [])]} />
+          )}
         </section>
 
         {/* ---- 2 · build ---- */}
@@ -242,6 +275,17 @@ export default function DeployView({ root, onNotify, asTab = false }) {
           </div>
           {buildLog && (
             <pre className="dp-log">{`${buildLog.output || ''}${buildLog.error ? `\n${buildLog.error}` : ''}`.trim() || '(no output)'}</pre>
+          )}
+          {buildLog && (buildLog.code !== 0 || buildLog.error) && isDesktop && hasRoot && (
+            <FixButton
+              onFixWithAI={onFixWithAI}
+              phase="build"
+              details={[
+                buildCommand ? `Command: ${buildCommand}` : '',
+                buildLog.error ? `Error: ${buildLog.error}` : `Build exited with code ${buildLog.code ?? '?'}`,
+                buildLog.output ? `Output (tail):\n${String(buildLog.output).split('\n').slice(-30).join('\n')}` : '',
+              ]}
+            />
           )}
         </section>
 
@@ -282,7 +326,7 @@ export default function DeployView({ root, onNotify, asTab = false }) {
         </section>
 
         {/* ---- publish to a real host (Vercel / Netlify) ---- */}
-        <DeployPublish root={root} buildCommand={buildCommand} outputDir={outputDir} onNotify={onNotify} />
+        <DeployPublish root={root} buildCommand={buildCommand} outputDir={outputDir} onNotify={onNotify} onFixWithAI={onFixWithAI} />
 
         {/* ---- other hosts, as transparent commands ---- */}
         <section className="dp-card dp-providers">

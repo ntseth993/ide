@@ -105,6 +105,77 @@ describe('aiService fallback', () => {
     expect(freeCalls).toBe(1); // no second attempt against the same provider
   });
 
+  it('explains a network outage once when both the provider and the fallback fail to connect', async () => {
+    const prevKey = process.env.GROQ_API_KEY;
+    process.env.GROQ_API_KEY = 'gsk_test';
+    // Node's fetch surfaces every transport failure as `TypeError: fetch failed`
+    // with the real reason in `cause`; both endpoints get the same treatment.
+    const fetchFailed = () => Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }),
+    });
+    global.fetch = async () => { throw fetchFailed(); };
+
+    const events = [];
+    let resolveDone;
+    const done = new Promise((r) => { resolveDone = r; });
+    const service = createAiService({
+      onEvent: (e) => { events.push(e); if (e.type === 'done') resolveDone(e); },
+      secretStore,
+      logger,
+    });
+
+    await service.start({ provider: 'groq', messages: [{ role: 'user', content: 'hi' }] });
+    const doneEvent = await done;
+    process.env.GROQ_API_KEY = prevKey;
+
+    expect(JSON.parse(doneEvent.data).reason).toBe('error');
+    const errorEvent = events.find((e) => e.type === 'error');
+    // No raw "fetch failed" leaks to the UI; it becomes an actionable message.
+    expect(errorEvent.data).not.toContain('fetch failed');
+    expect(errorEvent.data).toMatch(/could not be resolved/i);
+    // The identical double failure is collapsed into one connectivity explanation.
+    expect(errorEvent.data).toMatch(/free fallback/i);
+    expect(errorEvent.data).toMatch(/internet connection, firewall or proxy/i);
+    expect((errorEvent.data.match(/Could not reach/g) || []).length).toBe(1);
+  });
+
+  it('resolves a Groq key from the GROQ_API_KEY alias and answers without fallback', async () => {
+    const prevPrefixed = process.env.NOVACODE_GROQ_API_KEY;
+    const prevAlias = process.env.GROQ_API_KEY;
+    delete process.env.NOVACODE_GROQ_API_KEY;
+    process.env.GROQ_API_KEY = 'gsk_alias';
+    const urls = [];
+    const auth = [];
+    global.fetch = async (url, opts) => {
+      urls.push(url);
+      auth.push(opts?.headers?.Authorization);
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"Yo"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+    };
+
+    const events = [];
+    let resolveDone;
+    const done = new Promise((r) => { resolveDone = r; });
+    const service = createAiService({
+      onEvent: (e) => { events.push(e); if (e.type === 'done') resolveDone(e); },
+      secretStore,
+      logger,
+    });
+
+    await service.start({ provider: 'groq', model: 'openai/gpt-oss-20b', messages: [{ role: 'user', content: 'hi' }] });
+    const doneEvent = await done;
+
+    expect(JSON.parse(doneEvent.data).reason).toBe('completed');
+    expect(urls.some((u) => u.includes('api.groq.com'))).toBe(true);
+    expect(urls.some((u) => u.includes('pollinations'))).toBe(false);
+    expect(auth[0]).toBe('Bearer gsk_alias');
+
+    if (prevPrefixed === undefined) delete process.env.NOVACODE_GROQ_API_KEY; else process.env.NOVACODE_GROQ_API_KEY = prevPrefixed;
+    if (prevAlias === undefined) delete process.env.GROQ_API_KEY; else process.env.GROQ_API_KEY = prevAlias;
+  });
+
   it('waits and retries when the free provider is rate-limited (402), then answers', async () => {
     let calls = 0;
     global.fetch = async () => {

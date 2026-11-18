@@ -1,14 +1,7 @@
-/** Settings panel: appearance, editor behavior, code shortcuts, and AI config. */
+/** Settings panel: appearance, editor behavior, and AI config. */
 import { useEffect, useMemo, useState } from 'react';
 import { client, isDesktop, toUserMessage } from '../services/novaClient';
-import { THEMES } from '../themes';
-import { listSnippetShortcutEntries } from '../services/builtinSnippets';
-
-const OAUTH_SETUP_URLS = {
-  google: 'https://console.cloud.google.com/apis/credentials',
-  github: 'https://github.com/settings/developers',
-  microsoft: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
-};
+import { THEMES, resolveSystemTheme } from '../themes';
 
 /** Toggle row: label + one-line explanation + switch (used across the panel). */
 function SwitchRow({ label, hint, checked, onChange }) {
@@ -128,28 +121,11 @@ function ClassroomSection() {
   );
 }
 
-export default function SettingsPanel({ settings, update, runtimes }) {
+export default function SettingsPanel({ settings, update }) {
   const [appInfo, setAppInfo] = useState(null);
   const [connState, setConnState] = useState({ state: 'idle', message: '' });
-  const [oauthProviders, setOauthProviders] = useState([]);
-  const [oauthDraft, setOauthDraft] = useState({});
-  const [oauthMsg, setOauthMsg] = useState({ state: 'idle', text: '' });
   const [aiProviders, setAiProviders] = useState([]);
-  const [snippetQuery, setSnippetQuery] = useState('');
-
-  // Code shortcuts are just snippet prefixes, so the list is generated from the
-  // registry itself — it can never drift from what the editor actually offers.
-  const snippetGroups = useMemo(() => {
-    const needle = snippetQuery.trim().toLowerCase();
-    const grouped = new Map();
-    for (const entry of listSnippetShortcutEntries()) {
-      if (needle && !entry.prefix.includes(needle) && !entry.language.includes(needle)
-        && !(entry.description || '').toLowerCase().includes(needle)) continue;
-      if (!grouped.has(entry.language)) grouped.set(entry.language, []);
-      grouped.get(entry.language).push(entry);
-    }
-    return [...grouped.entries()];
-  }, [snippetQuery]);
+  const [systemTheme, setSystemTheme] = useState('dark');
 
   // Inline model picker options follow whichever inline provider is chosen.
   const inlineProviderObj = useMemo(
@@ -168,9 +144,18 @@ export default function SettingsPanel({ settings, update, runtimes }) {
     client.appInfo().then(setAppInfo).catch(() => setAppInfo(null));
   }, []);
 
+  // Listen for system theme changes to update the display
   useEffect(() => {
-    if (!isDesktop) return;
-    client.oauthStatus().then(setOauthProviders).catch(() => setOauthProviders([]));
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      setSystemTheme(mediaQuery.matches ? 'dark' : 'light');
+    };
+    
+    // Initial value
+    handleChange();
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
   // Provider descriptors come from the main-process registry, so the Settings
@@ -178,43 +163,6 @@ export default function SettingsPanel({ settings, update, runtimes }) {
   useEffect(() => {
     client.listAiProviders().then((list) => setAiProviders(list || [])).catch(() => setAiProviders([]));
   }, []);
-
-  function setDraft(key, value) {
-    setOauthDraft((draft) => ({ ...draft, [key]: value }));
-  }
-
-  async function refreshOauth() {
-    setOauthProviders(await client.oauthStatus());
-  }
-
-  async function saveOauth(provider) {
-    const payload = { provider };
-    if (oauthDraft[`${provider}:id`] !== undefined) payload.clientId = oauthDraft[`${provider}:id`];
-    if (oauthDraft[`${provider}:secret`] !== undefined) payload.clientSecret = oauthDraft[`${provider}:secret`];
-    try {
-      await client.setOauthConfig(payload);
-      setOauthDraft((draft) => {
-        const next = { ...draft };
-        delete next[`${provider}:id`];
-        delete next[`${provider}:secret`];
-        return next;
-      });
-      await refreshOauth();
-      setOauthMsg({ state: 'ok', text: 'Saved.' });
-    } catch (error) {
-      setOauthMsg({ state: 'error', text: toUserMessage(error) });
-    }
-  }
-
-  async function removeOauth(provider) {
-    try {
-      await client.setOauthConfig({ provider, clientId: '', clientSecret: '' });
-      await refreshOauth();
-      setOauthMsg({ state: 'ok', text: 'Removed.' });
-    } catch (error) {
-      setOauthMsg({ state: 'error', text: toUserMessage(error) });
-    }
-  }
 
   async function checkConnection() {
     setConnState({ state: 'checking', message: '' });
@@ -258,7 +206,12 @@ export default function SettingsPanel({ settings, update, runtimes }) {
                   <span className="theme-swatch-line" />
                   <span className="theme-swatch-line short" />
                 </span>
-                <span className="theme-name">{theme.label}</span>
+                <span className="theme-name">
+                  {theme.label}
+                  {theme.id === 'system' && settings.theme === 'system' && (
+                    <span className="theme-badge">({systemTheme})</span>
+                  )}
+                </span>
                 <span className="theme-blurb">{theme.blurb}</span>
               </button>
             ))}
@@ -340,37 +293,6 @@ export default function SettingsPanel({ settings, update, runtimes }) {
             checked={settings.autoClosingBrackets !== false}
             onChange={(checked) => update({ autoClosingBrackets: checked })}
           />
-        </section>
-
-        <section className="settings-group">
-          <h4>Code shortcuts</h4>
-          <p className="muted tiny">
-            Type a prefix in the editor and accept it from the autocomplete list — the skeleton is inserted with
-            tab stops, so <kbd>Tab</kbd> walks the placeholders. <kbd>Ctrl+Space</kbd> opens the list on demand.
-          </p>
-          <input
-            className="snippet-search"
-            type="search"
-            value={snippetQuery}
-            onChange={(e) => setSnippetQuery(e.target.value)}
-            placeholder="Filter shortcuts (fn, def, flex, …)"
-            aria-label="Filter code shortcuts"
-            spellCheck="false"
-          />
-          {snippetGroups.length === 0 && <p className="muted tiny">No shortcut matches “{snippetQuery}”.</p>}
-          {snippetGroups.map(([language, entries]) => (
-            <div className="snippet-group" key={language}>
-              <span className="snippet-language">{language}</span>
-              <div className="snippet-list">
-                {entries.map((entry) => (
-                  <span className="snippet-chip" key={`${language}:${entry.prefix}`} title={entry.description || entry.prefix}>
-                    <code>{entry.prefix}</code>
-                    {entry.description && <em>{entry.description}</em>}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
         </section>
 
         <section className="settings-group">
@@ -469,113 +391,6 @@ export default function SettingsPanel({ settings, update, runtimes }) {
             provider there is no per-user key: set the Base URL to your gateway (for example
             <code className="oauth-cb"> https://ai.example.com/v1</code>) and sign-in users get chat and inline AI out
             of the box — the keys live on your server.
-          </p>
-        </section>
-
-        <section className="settings-group">
-          <h4>Sign-in providers</h4>
-          {!isDesktop && (
-            <p className="muted tiny">Provider sign-in (Google, GitHub, Microsoft) is configured in the desktop app.</p>
-          )}
-          {isDesktop && (
-            <>
-              <p className="muted tiny">
-                Let people sign in with an existing account instead of an email. Register an OAuth app with the
-                provider, then paste its Client ID below. Values are stored with OS-level encryption and never
-                sent to the renderer. Redirect / callback URI to register:
-                <code className="oauth-cb"> http://127.0.0.1/callback</code>
-              </p>
-              {oauthProviders.length === 0 && <p className="muted tiny">Loading providers…</p>}
-              {oauthProviders.map((provider) => {
-                const idDraft = oauthDraft[`${provider.id}:id`] || '';
-                const secretDraft = oauthDraft[`${provider.id}:secret`] || '';
-                const dirty = Boolean(idDraft) || Boolean(secretDraft);
-                return (
-                  <div key={provider.id} className="oauth-provider">
-                    <div className="oauth-provider-head">
-                      <span className="oauth-provider-name">{provider.label}</span>
-                      <span className={`conn-result ${provider.live ? 'ok' : ''}`}>
-                        {provider.live ? 'Ready' : provider.fromEnv ? 'Ready (from env)' : 'Not set up'}
-                      </span>
-                    </div>
-                    <label>
-                      Client ID
-                      <input
-                        type="text"
-                        spellCheck="false"
-                        placeholder={provider.hasClientId && !provider.fromEnv ? 'Configured — enter to replace' : 'e.g. 1234-abc.apps.googleusercontent.com'}
-                        value={idDraft}
-                        onChange={(e) => setDraft(`${provider.id}:id`, e.target.value)}
-                      />
-                    </label>
-                    {provider.requiresSecret && (
-                      <label>
-                        Client secret
-                        <input
-                          type="password"
-                          spellCheck="false"
-                          placeholder={provider.hasSecret ? 'Configured — enter to replace' : 'GitHub requires a client secret'}
-                          value={secretDraft}
-                          onChange={(e) => setDraft(`${provider.id}:secret`, e.target.value)}
-                        />
-                      </label>
-                    )}
-                    <div className="conn-row">
-                      <button type="button" className="secondary small" disabled={!dirty} onClick={() => saveOauth(provider.id)}>
-                        Save
-                      </button>
-                      {provider.hasClientId && !provider.fromEnv && (
-                        <button type="button" className="danger small" onClick={() => removeOauth(provider.id)}>
-                          Remove
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="link-button"
-                        onClick={() => client.openExternal(OAUTH_SETUP_URLS[provider.id])}
-                      >
-                        How to get this
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {oauthMsg.text && <p className={`conn-result ${oauthMsg.state}`}>{oauthMsg.text}</p>}
-              <p className="muted tiny">
-                GitHub also needs a fixed loopback port: set <code className="oauth-cb">NOVACODE_AUTH_PORT</code>{' '}
-                before launching and register the callback with that port.
-              </p>
-            </>
-          )}
-        </section>
-
-        <section className="settings-group">
-          <h4>Language runtimes</h4>
-          {!runtimes && <p className="muted tiny runtime-probing">Detecting installed runtimes…</p>}
-          {runtimes ? (
-            <ul className="runtime-list">
-              {runtimes.runtimes.map((runtime) => (
-                <li key={runtime.id} className={`runtime-row ${runtime.found ? 'found' : 'missing'}`}>
-                  <span className="runtime-dot" aria-hidden="true" />
-                  <span className="runtime-label">{runtime.label}</span>
-                  <span className="muted tiny">
-                    {runtime.found
-                      ? `found${runtime.version ? ` · ${runtime.version}` : ''}`
-                      : 'not installed'}
-                  </span>
-                  {!runtime.found && runtime.installHint && (
-                    <span className="muted tiny runtime-hint">{runtime.installHint}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted tiny">Detecting installed toolchains…</p>
-          )}
-          <p className="muted tiny">
-            Syntax highlighting works for all listed languages out of the box. Diagnostics, autocomplete,
-            formatting, and debugging beyond the editor defaults require the matching language server or
-            compiler — languages without their runtime installed run in highlighting-only mode.
           </p>
         </section>
 

@@ -85,4 +85,27 @@ describe('fsService (against a real temp workspace)', () => {
     const root = makeWorkspace();
     await expect(fsService.search(root, { query: '([unclosed', isRegex: true })).rejects.toThrow(/Invalid search pattern/);
   });
+
+  it('mkdirp creates nested folders and refuses to escape the workspace', async () => {
+    const root = makeWorkspace();
+    const { path: made } = await fsService.mkdirp(root, path.join('src', 'components', 'layout'));
+    expect(fs.existsSync(made)).toBe(true);
+    // Creating the root itself is a no-op, not an error.
+    await expect(fsService.mkdirp(root, root)).resolves.toMatchObject({ path: path.resolve(root) });
+    await expect(fsService.mkdirp(root, '../escape')).rejects.toThrow(/Access outside/);
+  });
+
+  it('move relocates an item inside the workspace and keeps it confined', async () => {
+    const root = makeWorkspace();
+    await fsService.mkdirp(root, path.join(root, 'components'));
+    const { path: file } = await fsService.createFile(root, root, 'Navbar.jsx');
+    const { path: moved } = await fsService.move(root, file, path.join(root, 'components'));
+    expect(moved).toBe(path.join(root, 'components', 'Navbar.jsx'));
+    expect(fs.existsSync(moved)).toBe(true);
+    expect(fs.existsSync(file)).toBe(false);
+    // A move that would land outside the workspace is rejected before any rename.
+    await expect(fsService.move(root, moved, '..')).rejects.toThrow(/Access outside/);
+    // The workspace root itself can never be moved.
+    await expect(fsService.move(root, root, root)).rejects.toThrow(/workspace folder itself/);
+  });
 });

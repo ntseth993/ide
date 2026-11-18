@@ -17,8 +17,10 @@ const externalOpens = [];
 const ipcMainStub = {
   handle: (channel, fn) => channels.set(channel, fn),
 };
+const trashes = [];
 const shellStub = {
   openExternal: (url) => externalOpens.push(url),
+  trashItem: vi.fn(async (p) => { trashes.push(p); }),
 };
 
 const fsStubs = {
@@ -27,6 +29,8 @@ const fsStubs = {
   writeFile: vi.fn(async () => ({})),
   createFile: vi.fn(async () => ({})),
   createFolder: vi.fn(async () => ({})),
+  mkdirp: vi.fn(async (root, target) => ({ path: target })),
+  move: vi.fn(async (root, target) => ({ path: target })),
   rename: vi.fn(async () => ({})),
   remove: vi.fn(async () => ({})),
   search: vi.fn(async () => []),
@@ -160,8 +164,8 @@ function call(channel, ...payload) {
 
 describe('IPC argument contract', () => {
   it('registers the full closed channel set', () => {
-    // 51 non-NovaLink channels + 58 NovaLink Live channels (notify + 4 classroom added).
-    expect(channels.size).toBe(109);
+    // 51 non-NovaLink + 58 NovaLink Live + 9 governed AI-Agent channels.
+    expect(channels.size).toBe(118);
     expect(registerIpcFailedOnce).toBe(false);
   });
 
@@ -172,14 +176,16 @@ describe('IPC argument contract', () => {
       ...services,
       ipcMain: { handle: (c, f) => secondChannels.set(c, f) },
     });
-    expect(secondChannels.size).toBe(109);
-    expect(result.channelCount).toBe(109);
+    expect(secondChannels.size).toBe(118);
+    expect(result.channelCount).toBe(118);
   });
 
   it('exposes the provider catalog and account channels', async () => {
     const providers = await call('ai:providers');
     expect(Array.isArray(providers)).toBe(true);
-    expect(providers.map((p) => p.id)).toEqual(expect.arrayContaining(['openai', 'anthropic', 'gemini', 'ollama']));
+    // This build is Groq-only: only the Groq descriptor is surfaced to the UI
+    // dropdowns (the rest stay in the registry for internal use).
+    expect(providers.map((p) => p.id)).toEqual(['groq']);
     const account = await call('auth:sign-in', { email: 'ada@example.com' });
     expect(account).toMatchObject({ email: 'ada@example.com', tokensRemaining: 1_000_000_000 });
     await call('auth:account');
@@ -310,6 +316,81 @@ describe('IPC argument contract', () => {
     // The channel is always invoked with a payload object, never a bare event.
     await call('ai:complete');
     expect(services.ai.complete).toHaveBeenLastCalledWith({}, expect.any(Function));
+  });
+
+  it('agent:write-file journals the previous contents then writes', async () => {
+    const abs = path.resolve('C:\\w', 'a.js');
+    const result = await call('agent:write-file', { root: 'C:\\w', path: 'a.js', content: 'new content\n' });
+    expect(result).toMatchObject({ id: 'ch-test-1', filePath: abs, created: false });
+    expect(services.history.record).toHaveBeenCalledWith({
+      root: 'C:\\w',
+      filePath: abs,
+      previous: 'old content\n',
+      content: 'new content\n',
+      kind: 'agent-edit',
+    });
+    expect(fsStubs.writeFile).toHaveBeenCalledWith('C:\\w', abs, 'new content\n');
+  });
+
+  it('agent:write-file treats an unreadable file as newly created', async () => {
+    fsStubs.readFile.mockRejectedValueOnce(new Error('ENOENT'));
+    const result = await call('agent:write-file', { root: 'C:\\w', path: 'made.js', content: 'x' });
+    expect(result.created).toBe(true);
+    expect(services.history.record).toHaveBeenCalledWith(expect.objectContaining({ previous: null, kind: 'agent-edit' }));
+  });
+
+  it('agent file routes refuse secret paths even inside the workspace', async () => {
+    await expect(call('agent:read-file', { root: 'C:\\w', path: '.env' })).rejects.toThrow(/credential store/i);
+    await expect(call('agent:write-file', { root: 'C:\\w', path: '.env', content: 'x' })).rejects.toThrow(/credential store/i);
+    await expect(call('agent:delete-path', { root: 'C:\\w', path: 'secrets.json' })).rejects.toThrow(/credential store/i);
+    await expect(call('agent:rename-path', { root: 'C:\\w', path: 'a.js', newName: 'id_rsa' })).rejects.toThrow(/credential store/i);
+  });
+
+  it('agent:read-file returns file contents for ordinary files', async () => {
+    const res = await call('agent:read-file', { root: 'C:\\w', path: 'src/App.jsx' });
+    expect(res).toEqual({ content: 'old content\n' });
+    expect(fsStubs.readFile).toHaveBeenCalledWith('C:\\w', 'src/App.jsx');
+  });
+
+  it('agent:create-folder and agent:move-path reach the new fs primitives', async () => {
+    await call('agent:create-folder', { root: 'C:\\w', path: 'src/components/layout' });
+    expect(fsStubs.mkdirp).toHaveBeenCalledWith('C:\\w', 'src/components/layout');
+    await call('agent:move-path', { root: 'C:\\w', path: 'src/Navbar.jsx', destDir: 'src/components' });
+    expect(fsStubs.move).toHaveBeenCalledWith('C:\\w', 'src/Navbar.jsx', 'src/components');
+  });
+
+  it('agent:delete-path prefers a recoverable trash', async () => {
+    const abs = path.resolve('C:\\w', 'old');
+    const res = await call('agent:delete-path', { root: 'C:\\w', path: 'old' });
+    expect(res).toMatchObject({ ok: true, trashed: true, filePath: abs });
+    expect(trashes).toContain(abs);
+    expect(fsStubs.remove).not.toHaveBeenCalled();
+  });
+
+  it('agent:delete-path falls back to a hard remove when trash fails', async () => {
+    shellStub.trashItem.mockRejectedValueOnce(new Error('no trash on volume'));
+    const res = await call('agent:delete-path', { root: 'C:\\w', path: 'temp.js' });
+    expect(res.trashed).toBe(false);
+    expect(fsStubs.remove).toHaveBeenCalledWith('C:\\w', 'temp.js');
+  });
+
+  it('agent:run-command blocks destructive commands instead of spawning them', async () => {
+    const res = await call('agent:run-command', { root: 'C:\\w', command: 'sudo rm -rf /' });
+    expect(res).toMatchObject({ blocked: true, code: null });
+    expect(res.error).toMatch(/system-level|blocked/i);
+    expect(services.terminal.runCapture).not.toHaveBeenCalled();
+  });
+
+  it('agent:run-command runs normal dev commands through the capture service', async () => {
+    const res = await call('agent:run-command', { root: 'C:\\w', cwd: 'C:\\w', command: 'npm test' });
+    expect(res).toMatchObject({ command: 'npm test', code: 0 });
+    expect(services.terminal.runCapture).toHaveBeenCalledWith({ root: 'C:\\w', cwd: 'C:\\w', command: 'npm test', profile: undefined });
+  });
+
+  it('every agent route demands an open workspace first', async () => {
+    await expect(call('agent:list-dir', {})).rejects.toThrow(/Open a folder first/);
+    await expect(call('agent:search', { query: 'x' })).rejects.toThrow(/Open a folder first/);
+    await expect(call('agent:run-command', { command: 'npm test' })).rejects.toThrow(/Open a folder first/);
   });
 
   it('exposes window and lifecycle channels', async () => {
@@ -511,15 +592,15 @@ describe('deploy / hosting IPC contract', () => {
 
   it('opens 27 extra channels and only when the services exist', async () => {
     const result = await register();
-    // 105 base + 27 deploy/hosting channels = 132.
-    expect(result.channelCount).toBe(136);
-    expect(map.size).toBe(136);
+    // 118 base + 27 deploy/hosting channels = 145.
+    expect(result.channelCount).toBe(145);
+    expect(map.size).toBe(145);
 
     // No services wired -> no deploy/hosting surface at all.
     const mod = await import('../electron/ipc/registerIpc');
     const bare = new Map();
     mod.registerIpc({ ...services, ipcMain: { handle: (c, f) => bare.set(c, f) } });
-    expect(bare.size).toBe(109);
+    expect(bare.size).toBe(118);
     expect([...bare.keys()].some((k) => k.startsWith('deploy:'))).toBe(false);
   });
 
@@ -741,7 +822,7 @@ describe('deploy / hosting IPC contract', () => {
       deploy: deploySvc,
       ipcMain: { handle: (c, f) => onlyDeploy.set(c, f) },
     });
-    expect(onlyDeploy.size).toBe(112);
+    expect(onlyDeploy.size).toBe(121);
     expect(onlyDeploy.has('deploy:detect')).toBe(true);
     expect(onlyDeploy.has('deploy:start')).toBe(false);
     expect(onlyDeploy.has('deploy:connections')).toBe(false);
@@ -785,9 +866,9 @@ describe('NovaLink LAN discovery & hosting IPC', () => {
 
   it('registers the nine LAN channels only when a `lan` service is present', async () => {
     const { result, map } = await registerLan();
-    // 109 base + 9 LAN channels.
-    expect(result.channelCount).toBe(118);
-    expect(map.size).toBe(118);
+    // 118 base + 9 LAN channels.
+    expect(result.channelCount).toBe(127);
+    expect(map.size).toBe(127);
     for (const ch of ['novalinkLan:scan', 'novalinkLan:stopScan', 'novalinkLan:listHosts', 'novalinkLan:status',
       'novalinkLan:selectHost', 'novalinkLan:manualConnect', 'novalinkLan:startHost', 'novalinkLan:stopHost', 'novalinkLan:hostStatus']) {
       expect(map.has(ch)).toBe(true);
@@ -797,7 +878,7 @@ describe('NovaLink LAN discovery & hosting IPC', () => {
     const mod = await modPromise;
     const bare = new Map();
     mod.registerIpc({ ...services, ipcMain: { handle: (c, f) => bare.set(c, f) } });
-    expect(bare.size).toBe(109);
+    expect(bare.size).toBe(118);
     expect([...bare.keys()].some((k) => k.startsWith('novalinkLan:'))).toBe(false);
   });
 

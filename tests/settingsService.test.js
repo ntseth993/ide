@@ -13,12 +13,12 @@ describe('settingsService', () => {
     const service = createSettingsService(tempPath());
     const settings = await service.load();
     expect(settings.theme).toBe('dark');
-    expect(settings.ai.provider).toBe('pollinations');
-    expect(settings.ai.baseUrl).toBe('https://text.pollinations.ai/v1');
+    expect(settings.ai.provider).toBe('groq');
+    expect(settings.ai.baseUrl).toBe('https://api.groq.com/openai/v1');
     expect(settings.layout.terminalVisible).toBe(true);
   });
 
-  it('migrates an untouched legacy OpenAI default to the free provider', async () => {
+  it('migrates an untouched legacy OpenAI default to the new default provider', async () => {
     const settingsPath = tempPath();
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, JSON.stringify({
@@ -27,31 +27,44 @@ describe('settingsService', () => {
     }), 'utf8');
     const settings = await createSettingsService(settingsPath).load();
     // Provider triple resets to the new default; unrelated fields survive.
-    expect(settings.ai.provider).toBe('pollinations');
-    expect(settings.ai.model).toBe('openai-fast');
+    expect(settings.ai.provider).toBe('groq');
+    expect(settings.ai.model).toBe('openai/gpt-oss-120b');
     expect(settings.ai.temperature).toBe(0.5);
   });
 
-  it('migrates an untouched Ollama default to the free provider', async () => {
+  it('migrates an untouched Ollama default to the new default provider', async () => {
     const settingsPath = tempPath();
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, JSON.stringify({
       ai: { provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3.2' },
     }), 'utf8');
     const settings = await createSettingsService(settingsPath).load();
-    expect(settings.ai.provider).toBe('pollinations');
+    expect(settings.ai.provider).toBe('groq');
   });
 
-  it('migrates the slow Pollinations default to the fast model', async () => {
+  it('migrates an untouched Pollinations default to the new default provider', async () => {
     const settingsPath = tempPath();
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
     fs.writeFileSync(settingsPath, JSON.stringify({
-      ai: { provider: 'pollinations', baseUrl: 'https://text.pollinations.ai/v1', model: 'openai', temperature: 0.7 },
+      ai: { provider: 'pollinations', baseUrl: 'https://text.pollinations.ai/v1', model: 'openai-fast', temperature: 0.7 },
     }), 'utf8');
     const settings = await createSettingsService(settingsPath).load();
-    expect(settings.ai.provider).toBe('pollinations');
-    expect(settings.ai.model).toBe('openai-fast');
+    expect(settings.ai.provider).toBe('groq');
+    expect(settings.ai.model).toBe('openai/gpt-oss-120b');
     expect(settings.ai.temperature).toBe(0.7);
+  });
+
+  it('migrates the retired Groq default model to the current one', async () => {
+    const settingsPath = tempPath();
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      ai: { provider: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', temperature: 0.3 },
+    }), 'utf8');
+    const settings = await createSettingsService(settingsPath).load();
+    // The dead free model resets to the new gpt-oss default; temperature survives.
+    expect(settings.ai.provider).toBe('groq');
+    expect(settings.ai.model).toBe('openai/gpt-oss-120b');
+    expect(settings.ai.temperature).toBe(0.3);
   });
 
   it('keeps a deliberately customized provider', async () => {

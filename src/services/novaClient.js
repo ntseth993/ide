@@ -128,6 +128,48 @@ export const client = {
   onTerminalEvent(callback) {
     return nova ? nova.onTerminalEvent(callback) : () => {};
   },
+
+  // ---- AI Agent (autonomous, policy-governed) --------------------------------
+  // Thin named wrappers over the governed agent:* channels. They degrade to a
+  // structured "unavailable" result (never a fake success) when the bridge is
+  // missing or stale, so the agent loop surfaces a restart hint instead of
+  // silently pretending a file was written or a command ran.
+  async agentReadFile(payload) {
+    if (!nova || typeof nova.agentReadFile !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentReadFile(payload);
+  },
+  async agentListDir(payload) {
+    if (!nova || typeof nova.agentListDir !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentListDir(payload);
+  },
+  async agentSearch(payload) {
+    if (!nova || typeof nova.agentSearch !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentSearch(payload);
+  },
+  async agentWriteFile(payload) {
+    if (!nova || typeof nova.agentWriteFile !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentWriteFile(payload);
+  },
+  async agentCreateFolder(payload) {
+    if (!nova || typeof nova.agentCreateFolder !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentCreateFolder(payload);
+  },
+  async agentDeletePath(payload) {
+    if (!nova || typeof nova.agentDeletePath !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentDeletePath(payload);
+  },
+  async agentRenamePath(payload) {
+    if (!nova || typeof nova.agentRenamePath !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentRenamePath(payload);
+  },
+  async agentMovePath(payload) {
+    if (!nova || typeof nova.agentMovePath !== 'function') return { unavailable: true, error: 'The agent needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentMovePath(payload);
+  },
+  async agentRunCommand(payload) {
+    if (!nova || typeof nova.agentRunCommand !== 'function') return { output: '', code: null, error: 'Running commands needs a NovaCode restart to load. Stop the app and run "npm run dev" again.' };
+    return nova.agentRunCommand(payload);
+  },
   // main -> renderer: `nova <folder|file>` was requested on the CLI
   onWorkspaceRequest(callback) {
     return nova ? nova.onWorkspaceRequest(callback) : () => {};
@@ -165,7 +207,10 @@ export const client = {
     return nova.checkAiConnection(provider, baseUrl);
   },
   async startChat(payload) {
-    requireDesktop();
+    if (!nova) {
+      // Browser mode fallback: simulate streaming via direct API call
+      return this.startChatBrowser(payload);
+    }
     return nova.startChat(payload);
   },
   // Inline completions must never break typing: outside Electron, or on any
@@ -182,7 +227,77 @@ export const client = {
     nova?.cancelChat(runId);
   },
   onAiEvent(callback) {
-    return nova ? nova.onAiEvent(callback) : () => {};
+    return nova ? nova.onAiEvent(callback) : this.onAiEventBrowser(callback);
+  },
+
+  // ---- Browser mode AI fallback ----------------------------------------------
+  async startChatBrowser(payload) {
+    const { provider, model, messages, temperature } = payload;
+    const runId = `browser-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    
+    // Get settings from localStorage for browser mode
+    let settings;
+    try {
+      const local = localStorage.getItem('novacode-settings');
+      settings = local ? JSON.parse(local) : {};
+    } catch {
+      settings = {};
+    }
+    
+    const aiSettings = settings.ai || {};
+    const baseUrl = aiSettings.baseUrl || 'https://text.pollinations.ai/v1';
+    const apiKey = aiSettings.apiKey || '';
+    
+    // Simulate streaming by making a non-streaming request and emitting events
+    setTimeout(async () => {
+      try {
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: model || 'openai',
+            messages,
+            temperature: temperature || 0.7,
+            stream: false,
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.text();
+          this.browserAiEventCallbacks?.forEach(cb => cb({ type: 'error', runId, data: `API error: ${response.status} ${errorData}` }));
+          return;
+        }
+        
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        
+        // Simulate streaming by sending chunks
+        const chunks = content.match(/.{1,10}/g) || [content];
+        for (const chunk of chunks) {
+          this.browserAiEventCallbacks?.forEach(cb => cb({ type: 'delta', runId, data: chunk }));
+          await new Promise(r => setTimeout(r, 20));
+        }
+        
+        this.browserAiEventCallbacks?.forEach(cb => cb({ type: 'done', runId, data: JSON.stringify({ reason: 'stop' }) }));
+      } catch (error) {
+        this.browserAiEventCallbacks?.forEach(cb => cb({ type: 'error', runId, data: error.message || 'Network error' }));
+      }
+    }, 100);
+    
+    return { runId };
+  },
+  
+  onAiEventBrowser(callback) {
+    if (!this.browserAiEventCallbacks) {
+      this.browserAiEventCallbacks = [];
+    }
+    this.browserAiEventCallbacks.push(callback);
+    return () => {
+      this.browserAiEventCallbacks = this.browserAiEventCallbacks.filter(cb => cb !== callback);
+    };
   },
 
   // ---- accounts (local sign-in, per-email token, token budget) --------------

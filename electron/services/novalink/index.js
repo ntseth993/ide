@@ -15,13 +15,28 @@
  * Both hand their result back to the one `createLiveClient` instance below —
  * nothing here opens its own sockets to the renderer or stores a second set of
  * credentials.
+ *
+ * P2P modules provide automatic peer-to-peer sharing without requiring a server:
+ *   - `p2pIdentity.js` manages persistent user identity
+ *   - `p2pDiscovery.js` automatically discovers peers on the same LAN
+ *   - `p2pConnection.js` manages direct WebSocket connections to peers
+ *   - `p2pService.js` unifies all P2P functionality
  */
 const { createLiveClient, LiveError } = require('./liveClient');
 const { createLanDiscovery, manualBaseUrl } = require('./lanDiscovery');
 const { createLanHost } = require('./lanHost');
+const { createP2PService } = require('./p2pService');
 
 function createNovaLink(deps) {
   return { service: createLiveClient(deps) };
 }
 
-module.exports = { createNovaLink, createLiveClient, LiveError, createLanDiscovery, createLanHost, manualBaseUrl };
+module.exports = {
+  createNovaLink,
+  createLiveClient,
+  LiveError,
+  createLanDiscovery,
+  createLanHost,
+  manualBaseUrl,
+  createP2PService,
+};

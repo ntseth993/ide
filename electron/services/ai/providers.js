@@ -44,8 +44,25 @@ const PROVIDERS = [
   },
   {
     id: 'groq', label: 'Groq', kind: 'openai',
-    baseUrl: 'https://api.groq.com/openai/v1', defaultModel: 'llama-3.3-70b-versatile',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'], requiresKey: true,
+    // Groq retired the free llama-3.3-70b-versatile / llama-3.1-8b-instant to
+    // Enterprise-only, so a standard key now gets a 404 on them. These are the
+    // chat models a normal Groq key can actually list (verified against
+    // /openai/v1/models); gpt-oss-120b is the flagship reasoning default.
+    baseUrl: 'https://api.groq.com/openai/v1', defaultModel: 'openai/gpt-oss-120b',
+    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'], requiresKey: true,
+    // Single source of truth for which model powers each assistant mode (the
+    // renderer reads this via the ai:providers IPC). Verified live against a
+    // standard Groq key: all three return real content, not empty reasoning.
+    modeModels: {
+      agent: 'qwen/qwen3.8-27b',       // tool-heavy coding agent
+      ask: 'openai/gpt-oss-20b',       // fast conversational answers
+      reasoning: 'openai/gpt-oss-120b',// advanced reasoning (manual pick)
+    },
+    modelLabels: {
+      'openai/gpt-oss-120b': 'GPT-OSS 120B · advanced reasoning',
+      'openai/gpt-oss-20b': 'GPT-OSS 20B · fast',
+      'qwen/qwen3.8-27b': 'Qwen3.8 27B · agent',
+    },
   },
   {
     id: 'openrouter', label: 'OpenRouter', kind: 'openai',
@@ -87,4 +104,18 @@ function describeProviders() {
   }));
 }
 
-module.exports = { PROVIDERS, MODULES, DEFAULT_PROVIDER, getProvider, getModule, describeProviders };
+// The AI is Groq-only for this build: every other backend stays in the registry
+// (so existing sessions/config and the provider modules keep working), but only
+// this id list is surfaced to the composer and Settings dropdowns. Expand it to
+// re-enable another provider without touching the wire-protocol code.
+const SELECTABLE_PROVIDER_IDS = ['groq'];
+
+/** Provider descriptors offered in the UI, in list order, filtered to selectable ids. */
+function selectableProviders() {
+  return SELECTABLE_PROVIDER_IDS.map((id) => getProvider(id))
+    .map(({ id, label, kind, baseUrl, defaultModel, models, requiresKey, modeModels, modelLabels }) => ({
+      id, label, kind, baseUrl, defaultModel, models, requiresKey, modeModels, modelLabels,
+    }));
+}
+
+module.exports = { PROVIDERS, MODULES, DEFAULT_PROVIDER, SELECTABLE_PROVIDER_IDS, getProvider, getModule, describeProviders, selectableProviders };

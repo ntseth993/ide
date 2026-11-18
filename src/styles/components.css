@@ -140,7 +140,7 @@
 
 .welcome-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2rem;
   align-items: start;
   animation: nc-rise-in var(--dur-slower) var(--ease-out) both;
@@ -441,4 +441,86 @@ button.wide { width: 100%; margin-top: 0.85rem; justify-content: center; }
   color: var(--muted);
   font-size: 0.72rem;
   white-space: nowrap;
+}
+
+/* --- advanced glass effects ---------------------------------------------------- */
+
+.glass-card {
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
+}
+
+.glass-panel {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+}
+
+.glass-button {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  transition: var(--transition-smooth);
+}
+
+.glass-button:hover {
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  box-shadow: var(--shadow-colored);
+}
+
+.glass-badge {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--radius-full);
+  color: var(--accent);
+}
+
+.glass-input {
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  transition: var(--transition-smooth);
+}
+
+.glass-input:focus {
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+
+.glass-modal {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-lg);
+}
+
+.glass-tooltip {
+  background: color-mix(in srgb, var(--bg) 95%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-border), transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }

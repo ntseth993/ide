@@ -29,10 +29,13 @@ function estimateTokens(chars) {
 }
 
 // Free-tier rate limits and transient faults are worth a short, bounded wait
-// and retry so a message still gets an answer instead of erroring out.
+// and retry so a message still gets an answer instead of erroring out. The wait
+// grows exponentially from a small base (8s, then 16s) so a quick blip recovers
+// fast instead of freezing the UI for half a minute, while a real Retry-After
+// header is still honoured up to the cap.
 const MAX_RETRY_WAITS = 2;
-const DEFAULT_RETRY_WAIT_MS = 30000;
-const MAX_RETRY_WAIT_MS = 35000;
+const RETRY_BACKOFF_BASE_MS = 8000;
+const MAX_RETRY_WAIT_MS = 30000;
 
 /** Await `ms`, resolving early if the run is cancelled, so waits stay responsive. */
 function delay(ms, signal) {
@@ -68,6 +71,21 @@ function envKeyName(providerId) {
   return `NOVACODE_${providerId.toUpperCase().replace(/[^A-Z0-9]/g, '')}_API_KEY`;
 }
 
+// Extra environment variables a provider also accepts, so a standard vendor
+// name (e.g. GROQ_API_KEY) works alongside the NOVACODE_-prefixed one.
+const ENV_KEY_ALIASES = {
+  groq: ['GROQ_API_KEY'],
+};
+
+/** First configured env value for a provider, checking the prefixed name then aliases. */
+function readEnvKey(providerId) {
+  const names = [envKeyName(providerId), ...(ENV_KEY_ALIASES[providerId] || [])];
+  for (const name of names) {
+    if (process.env[name]) return process.env[name];
+  }
+  return null;
+}
+
 function createAiService({ onEvent, secretStore, logger, auth }) {
   const runs = new Map();
   let nextRunId = 1;
@@ -75,7 +93,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
   async function resolveApiKey(providerId) {
     const stored = await secretStore.getSecret(providerId);
     if (stored) return { key: stored, source: 'stored' };
-    const fromEnv = process.env[envKeyName(providerId)];
+    const fromEnv = readEnvKey(providerId);
     // Back-compat: the original single-key env var still satisfies OpenAI.
     if (fromEnv || (providerId === 'openai' && process.env.NOVACODE_OPENAI_API_KEY)) {
       return { key: fromEnv || process.env.NOVACODE_OPENAI_API_KEY, source: 'env' };
@@ -177,7 +195,8 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
               && !error.cancelled && !abortController.signal.aborted;
             if (!canRetry) throw error;
             waits += 1;
-            const waitMs = Math.min(error.retryAfterMs || DEFAULT_RETRY_WAIT_MS, MAX_RETRY_WAIT_MS);
+            const backoffMs = RETRY_BACKOFF_BASE_MS * (2 ** (waits - 1)); // 8s, then 16s
+            const waitMs = Math.min(error.retryAfterMs || backoffMs, MAX_RETRY_WAIT_MS);
             emit({ runId, type: 'status', data: `The AI is busy — waiting ${Math.ceil(waitMs / 1000)}s then retrying (${waits}/${MAX_RETRY_WAITS})…` });
             await delay(waitMs, abortController.signal);
             if (abortController.signal.aborted) {
@@ -226,7 +245,15 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
                 return;
               }
               logger.error('ai fallback run failed', { runId, error: fallbackError.message });
-              emit({ runId, type: 'error', data: `${error.message} The free fallback also failed: ${fallbackError.message}` });
+              // When the primary and the free fallback both fail the same way it
+              // is almost always the machine's network, not the providers. Say it
+              // once, plainly, instead of dumping two identical raw errors.
+              const sameFailure = error.message === fallbackError.message;
+              const networkOutage = error.network && fallbackError.network;
+              const message = sameFailure || networkOutage
+                ? `${error.message} NovaCode also tried the free fallback provider and could not reach it, which points to your internet connection, firewall or proxy rather than the AI service.`
+                : `${error.message} The free fallback also failed: ${fallbackError.message}`;
+              emit({ runId, type: 'error', data: message });
               emit({ runId, type: 'done', data: JSON.stringify({ reason: 'error' }) });
               return;
             }
@@ -359,7 +386,7 @@ function createAiService({ onEvent, secretStore, logger, auth }) {
   async function keyStatus({ provider } = {}) {
     const meta = getProvider(provider);
     const stored = await secretStore.getSecretSource(meta.id);
-    const fromEnv = Boolean(process.env[envKeyName(meta.id)] || (meta.id === 'openai' && process.env.NOVACODE_OPENAI_API_KEY));
+    const fromEnv = Boolean(readEnvKey(meta.id) || (meta.id === 'openai' && process.env.NOVACODE_OPENAI_API_KEY));
     return { provider: meta.id, hasKey: Boolean(stored) || fromEnv || !meta.requiresKey, source: stored, requiresKey: meta.requiresKey };
   }
 

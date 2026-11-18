@@ -41,9 +41,13 @@ const DEFAULTS = {
     aiPanelVisible: true,
   },
   ai: {
-    provider: 'pollinations',
-    baseUrl: 'https://text.pollinations.ai/v1',
-    model: 'openai-fast',
+    // Groq is the out-of-the-box assistant: a free API key unlocks fast,
+    // high-quality answers without the ~1 request / 30s wall that the keyless
+    // Pollinations fallback hits. Until a key is added, aiService falls back to
+    // Pollinations automatically, so a fresh install still answers immediately.
+    provider: 'groq',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    model: 'openai/gpt-oss-120b',
     temperature: 0.2,
     // Optional overrides so ghost-text can use a fast provider/model (e.g.
     // Gemini Flash, Groq) while chat stays on a stronger model. Empty = follow
@@ -131,11 +135,12 @@ function sanitize(patch) {
 function mergeDefaults(stored) {
   const storedAi = { ...(stored.ai || {}) };
   // One-time migration: an untouched default provider (never customized) yields
-  // to the new out-of-the-box default (free, no-key Pollinations) so a fresh or
-  // never-configured install answers immediately. Anyone who explicitly picked a
+  // to the new out-of-the-box default (Groq) so a fresh or never-configured
+  // install gets fast, high-quality answers. Anyone who explicitly picked a
   // provider or edited the URL/model keeps it, and unrelated fields (temperature,
-  // inline overrides) are always preserved. Matches the legacy OpenAI default and
-  // the intermediate Ollama default both shipped before this change.
+  // inline overrides) are always preserved. Matches the legacy OpenAI default,
+  // the intermediate Ollama default and the free Pollinations defaults that
+  // shipped before this change.
   const isDefaultTriple = (provider, baseUrl, model) =>
     storedAi.provider === provider
     && (storedAi.baseUrl === undefined || storedAi.baseUrl === baseUrl)
@@ -143,10 +148,16 @@ function mergeDefaults(stored) {
   const untouchedDefault =
     isDefaultTriple('openai', 'https://api.openai.com/v1', 'gpt-4o-mini')
     || isDefaultTriple('ollama', 'http://localhost:11434', 'llama3.2')
-    // The Pollinations default we shipped used the slow reasoning model 'openai',
-    // which stalls ~40s before its first token and reads as "not responding".
-    // Untouched installs on it migrate to the fast default model.
-    || isDefaultTriple('pollinations', 'https://text.pollinations.ai/v1', 'openai');
+    // The Pollinations defaults (fast and the older slow 'openai' reasoning
+    // model) were keyless but rate-limited to ~1 request / 30s; untouched
+    // installs on either migrate to Groq, which the free provider still backs
+    // up when no Groq key is present.
+    || isDefaultTriple('pollinations', 'https://text.pollinations.ai/v1', 'openai')
+    || isDefaultTriple('pollinations', 'https://text.pollinations.ai/v1', 'openai-fast')
+    // Groq retired the free llama-3.3-70b-versatile default to Enterprise-only
+    // (a standard key now 404s on it). An untouched Groq default migrates to the
+    // current gpt-oss-120b default; anyone who picked a different model keeps it.
+    || isDefaultTriple('groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile');
   if (untouchedDefault) {
     delete storedAi.provider;
     delete storedAi.baseUrl;

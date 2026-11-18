@@ -320,21 +320,72 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0.7rem 1.1rem;
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
 .diff-header h3 { margin: 0; font-size: 0.95rem; }
-.diff-header > div:first-child { display: flex; flex-direction: column; gap: 0.1rem; }
+.diff-title { display: flex; align-items: baseline; gap: 0.65rem; flex-wrap: wrap; min-width: 0; }
+.diff-file { font-size: 0.78rem; color: var(--muted); }
+.diff-summary { display: inline-flex; gap: 0.55rem; font-size: 0.74rem; font-style: normal; }
+.diff-summary em { font-style: normal; padding: 0.05rem 0.4rem; border-radius: 999px; border: 1px solid var(--border); }
+.diff-summary .add { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.diff-summary .del { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); }
+.diff-summary .chg { color: var(--muted); }
 
 .diff-body { flex: 1; min-height: 0; }
 
-.diff-note {
-  margin: 0;
-  padding: 0.45rem 1.1rem;
-  font-size: 0.74rem;
+.diff-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem 0.35rem;
   border-top: 1px solid var(--border);
   background: var(--panel);
+}
+.diff-nav { display: flex; align-items: center; justify-content: center; gap: 0.9rem; }
+.diff-navbtn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.6rem; font-size: 0.76rem;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--border); border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+}
+.diff-navbtn:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.diff-navbtn:disabled { opacity: 0.4; cursor: default; }
+.diff-counter { font-size: 0.76rem; color: var(--muted); min-width: 12ch; text-align: center; }
+
+.diff-change {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 55%, var(--panel));
+}
+.diff-change-lines {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.78rem;
+  max-height: 12rem; overflow: auto;
+}
+.dl { display: grid; grid-template-columns: 3ch 1ch 1fr; gap: 0.4rem; align-items: baseline; }
+.dl code { white-space: pre-wrap; word-break: break-word; }
+.dl-no { text-align: right; color: var(--faint); user-select: none; }
+.dl-mark { text-align: center; font-weight: 700; }
+.dl-del { background: color-mix(in srgb, var(--error) 12%, transparent); }
+.dl-del .dl-mark { color: var(--error); }
+.dl-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.dl-add .dl-mark { color: var(--ok); }
+.diff-change-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+.diff-change-actions .primary, .diff-change-actions .secondary { white-space: nowrap; }
+
+.diff-note {
+  margin: 0;
+  padding: 0.15rem 0 0.35rem;
+  font-size: 0.72rem;
 }
 
 /* --- account widget (top-right of the menu bar) --------------------------- */

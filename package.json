@@ -1,6 +1,6 @@
 {
   "name": "novacode-ide",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "NovaCode IDE - AI-powered desktop development environment",
   "main": "electron/main.js",
   "bin": {

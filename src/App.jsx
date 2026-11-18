@@ -32,7 +32,7 @@ import Onboarding from './components/Onboarding';
 import * as bus from './services/bus';
 import { languageRunCommand } from './services/languageSupport';
 import { getLanguage } from './utils/language';
-import { getTheme, THEMES, THEME_IDS } from './themes';
+import { getTheme, resolveSystemTheme, THEMES, THEME_IDS } from './themes';
 import { mergeSnippetsByLanguage } from './services/builtinSnippets';
 import { registerInlineAI } from './services/inlineAI';
 
@@ -68,15 +68,24 @@ export default function App() {
   const [activePath, setActivePath] = useState('');
   const [docs, setDocs] = useState({});
   const [cursor, setCursor] = useState(null);
+  const [selection, setSelection] = useState('');
   const [revealRequest, setRevealRequest] = useState(null);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [review, setReview] = useState(null);
+  // Files the autonomous agent changed this session, newest last. Powers the
+  // non-blocking "changes applied" summary and the best-effort Undo action; it
+  // never gates the agent (edits are already on disk, journaled in the main
+  // process so Change History can also restore any of them).
+  const [agentChanges, setAgentChanges] = useState([]);
   const [aiStreamingRunId, setAiStreamingRunId] = useState(null);
   const [aiState, setAiState] = useState('none');
   // 'agent' plans and rewrites files, 'ask' explains them.
   const [aiMode, setAiMode] = useState('agent');
+  // A prompt handed to the assistant from another panel (Deploy's "Fix with
+  // AI"); the AI panel consumes it and clears it so it runs exactly once.
+  const [pendingAiPrompt, setPendingAiPrompt] = useState(null);
   const [inlineAIState, setInlineAIState] = useState('off');
 
   const [promptState, setPromptState] = useState(null);
@@ -279,6 +288,21 @@ export default function App() {
     client.setWindowAppearance({ background: canvas, kind: theme.kind });
   }, [settings.theme, settings.accent, settings.reduceAnimations, extensionContributions.theme]);
 
+  // ---- system theme listener ------------------------------------------------
+  useEffect(() => {
+    if (settings.theme !== 'system') return;
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      // Force re-render by updating a dummy state or calling update
+      // The theme effect above will re-run with the resolved system theme
+      update({}); // Trigger settings refresh to re-apply theme
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [settings.theme, update]);
+
   useEffect(() => {
     try {
       localStorage.setItem(RECENT_KEY, JSON.stringify(recentProjects));
@@ -311,6 +335,7 @@ export default function App() {
       setTabs([]);
       setActivePath('');
       setDocs({});
+      setAgentChanges([]);
       // Restore last session for this workspace.
       try {
         const saved = JSON.parse(localStorage.getItem(sessionKey(resolved)));
@@ -654,31 +679,54 @@ export default function App() {
       name: baseName(activePath),
       language: (activePath.split('.').pop() || '').toLowerCase(),
       text: docs[activePath].text,
+      selection,
     };
-  }, [activePath, docs]);
+  }, [activePath, docs, selection]);
 
   const handleProposeEdit = useCallback((proposal) => {
     setReview(proposal);
   }, []);
 
-  const handleAcceptReview = useCallback(async () => {
+  const handleAcceptReview = useCallback(async (resolvedText, { finalize = true } = {}) => {
     if (!review) return;
+    const nextText = typeof resolvedText === 'string' ? resolvedText : review.modified;
+    // Patch safety: the diff was generated against one specific document and
+    // its text at that moment. Refuse to apply if the active file changed, or
+    // if this file's contents no longer match the snapshot — otherwise we would
+    // silently clobber edits made while the review was open.
+    if (activePath !== review.path) {
+      notify('The active file changed since this diff was created. Reopen it and regenerate the changes.', 'error');
+      return;
+    }
+    if (docs[review.path]?.text !== review.expectedOriginal) {
+      notify('This file changed while the review was open. Please ask the AI to regenerate the changes.', 'error');
+      return;
+    }
+    // Refuse to apply the same patch twice: if accepting changes to the exact
+    // text that is already on screen, there is nothing to write.
+    if (nextText === docs[review.path]?.text && finalize) {
+      setReview(null);
+      return;
+    }
     try {
       // Journaled apply: the main process records previous content BEFORE the
       // write, so every accepted AI edit is restorable from Change History.
-      await client.applyAiEdit(workspaceRoot, review.path, review.modified);
+      await client.applyAiEdit(workspaceRoot, review.path, nextText);
       setDocs((current) => ({
         ...current,
-        [review.path]: { text: review.modified, dirty: false },
+        [review.path]: { text: nextText, dirty: false },
       }));
-      setTabs((current) => (current.includes(review.path) ? current : [...current, review.path]));
-      setActivePath(review.path);
-      setReview(null);
-      notify('Changes applied — restore anytime from Change History');
+      if (finalize || nextText === review.modified) {
+        setReview(null);
+        notify('Changes applied — restore anytime from Change History');
+      } else {
+        // One change accepted: advance the base so the rest re-diff against it.
+        setReview((current) => ({ ...current, original: nextText, expectedOriginal: nextText }));
+      }
     } catch (error) {
       notify(toUserMessage(error), 'error');
     }
-  }, [notify, review, workspaceRoot]);
+  }, [activePath, docs, notify, review, workspaceRoot]);
 
   const handleRestored = useCallback((result) => {
     if (!result?.filePath) return;
@@ -697,6 +745,48 @@ export default function App() {
       notify(`Restored ${baseName(result.filePath)}`);
     }
   }, [notify]);
+
+  // ---- autonomous agent: track changes, refresh views, optional undo --------
+  // The agent applies edits directly (no approval). Each change lands here so
+  // open editors show the new text and the file tree re-reads; the summary and
+  // Undo are conveniences layered on top of the main-process journal, never a
+  // gate on the agent's progress.
+  const handleAgentChange = useCallback((change) => {
+    if (!change) return;
+    setAgentChanges((current) => [...current, change]);
+    const stalePath = change.renamedFrom || change.movedFrom;
+    if (change.deleted && change.path) {
+      setDocs((current) => { const next = { ...current }; delete next[change.path]; return next; });
+      setTabs((current) => current.filter((tab) => tab !== change.path));
+      setActivePath((current) => (current === change.path ? '' : current));
+    } else if (stalePath && stalePath !== change.path) {
+      setDocs((current) => { const next = { ...current }; delete next[stalePath]; return next; });
+      setTabs((current) => current.filter((tab) => tab !== stalePath));
+      setActivePath((current) => (current === stalePath ? '' : current));
+    } else if (change.after != null && change.path) {
+      // Only refresh an already-open buffer; new files show via the tree.
+      setDocs((current) => (current[change.path] ? { ...current, [change.path]: { text: change.after, dirty: false } } : current));
+    }
+    if (workspaceRoot) refreshTree(workspaceRoot);
+  }, [refreshTree, workspaceRoot]);
+
+  const undoAgentChanges = useCallback(async () => {
+    if (!workspaceRoot) return;
+    const revertable = agentChanges.filter((change) => change.historyId);
+    for (const change of revertable) {
+      try {
+        const result = await client.restoreHistory(workspaceRoot, change.historyId);
+        handleRestored(result);
+      } catch (error) {
+        notify(toUserMessage(error), 'error');
+      }
+    }
+    setAgentChanges([]);
+    if (workspaceRoot) refreshTree(workspaceRoot);
+    notify(revertable.length
+      ? `Reverted ${revertable.length} agent edit${revertable.length === 1 ? '' : 's'}`
+      : 'No content edits to undo (deletions and moves stay recoverable from Change History)');
+  }, [agentChanges, handleRestored, notify, refreshTree, workspaceRoot]);
 
   // ---- layout -------------------------------------------------------------------
   const layout = settings.layout;
@@ -746,6 +836,16 @@ export default function App() {
   const openNovaLink = useCallback(() => setSpecialTab('novalink'), []);
   const openNovaDb = useCallback(() => setSpecialTab('novadb'), []);
   const openDeploy = useCallback(() => setSpecialTab('deploy'), []);
+
+  // Hand a diagnosed problem from another panel to the assistant and run it in
+  // Agent mode, so the fix is applied to the workspace (and journaled/undoable)
+  // rather than merely explained. Opens the AI panel if it is hidden.
+  const handleFixWithAI = useCallback((prompt) => {
+    if (!prompt) return;
+    setRightMode('ai');
+    setAiMode('agent');
+    setPendingAiPrompt(prompt);
+  }, []);
 
   // ---- extensions -------------------------------------------------------------
   const refreshExtensions = useCallback(async () => {
@@ -1157,7 +1257,7 @@ export default function App() {
     />
   );
   const novaDbPanelEl = <NovaDbView onNotify={notify} asTab />;
-  const deployPanelEl = <DeployView root={workspaceRoot} onNotify={notify} asTab />;
+  const deployPanelEl = <DeployView root={workspaceRoot} onNotify={notify} asTab onFixWithAI={handleFixWithAI} />;
   // The active non-file view (Settings / NovaLink / Database / Deploy) renders as a tab
   // in the editor strip; only the opened one shows until it's closed.
   const specialTabs = specialTab
@@ -1323,6 +1423,7 @@ export default function App() {
                   onCloseTab={closeTab}
                   onChange={handleChange}
                   onCursor={setCursor}
+                  onSelection={setSelection}
                   onEditorMount={(editor, monaco) => {
                     editorApiRef.current = { editor, monaco };
                     setMonacoApi({ monaco });
@@ -1374,8 +1475,13 @@ export default function App() {
                           if (runId) setAiState('streaming');
                         }}
                         onProposeEdit={handleProposeEdit}
+                        agentChanges={agentChanges}
+                        onAgentChange={handleAgentChange}
+                        onUndoAgentChanges={undoAgentChanges}
                         onOpenSettings={openSettings}
                         onOpenHistory={() => setRightMode('history')}
+                        pendingPrompt={pendingAiPrompt}
+                        onConsumePendingPrompt={() => setPendingAiPrompt(null)}
                       />
                     ) : rightMode === 'history' ? (
                       <HistoryPanel workspaceRoot={workspaceRoot} onRestored={handleRestored} />

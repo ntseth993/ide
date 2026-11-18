@@ -86,6 +86,46 @@ async function createFolder(root, dir, name) {
   return { path: folderPath };
 }
 
+/**
+ * Create a (possibly deeply nested) folder path inside the workspace. Unlike
+ * createFolder, this makes every missing parent, so the Agent can satisfy
+ * "create src/pages/auth" in one step. The leaf is resolved through pathGuard,
+ * so a traversal out of the workspace is rejected before anything is created.
+ */
+async function mkdirp(root, target) {
+  const folderPath = resolveWithin(root, target);
+  if (folderPath === path.resolve(root)) {
+    return { path: folderPath };
+  }
+  await fsp.mkdir(folderPath, { recursive: true });
+  return { path: folderPath };
+}
+
+/**
+ * Move an item into a different (existing or to-be-created) directory inside
+ * the workspace. Both endpoints are confined via pathGuard; the workspace root
+ * itself can never be moved. Used by the Agent's move_file / move_folder.
+ */
+async function move(root, target, destDir) {
+  const source = resolveWithin(root, target);
+  if (source === path.resolve(root)) {
+    throw new PathGuardError('The workspace folder itself cannot be moved.');
+  }
+  const base = path.basename(source);
+  const destParent = resolveWithin(root, destDir);
+  const destination = path.join(destParent, base);
+  const relative = path.relative(path.resolve(root), destination);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new PathGuardError('Move would place the item outside the workspace.');
+  }
+  if (destination === source) {
+    return { path: destination };
+  }
+  await fsp.mkdir(path.dirname(destination), { recursive: true });
+  await fsp.rename(source, destination);
+  return { path: destination };
+}
+
 async function rename(root, target, newName) {
   const { source, destination } = resolveRename(root, target, newName);
   if (source === path.resolve(root)) {
@@ -182,6 +222,8 @@ module.exports = {
   MAX_READ_BYTES,
   createFile,
   createFolder,
+  mkdirp,
+  move,
   readFile,
   readTree,
   remove,

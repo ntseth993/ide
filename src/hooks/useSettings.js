@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { client, toUserMessage } from '../services/novaClient';
 
 export const DEFAULT_SETTINGS = {
-  theme: 'dark',
+  theme: 'system',
   accent: '#7c5cff',
   fontSize: 14,
   tabSize: 2,

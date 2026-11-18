@@ -12,14 +12,15 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { client, toUserMessage } from '../services/novaClient';
+import * as bus from '../services/bus';
 import { formatTokens, formatExact } from '../utils/tokens';
 import { buildChatSystemPrompt } from '../services/aiPrompts';
-import { parseToolCalls, isAutoTool, describeToolCall, formatToolResults } from '../services/agentTools';
-import { StopIcon, CheckIcon, SparkleIcon, PlusIcon, HistoryIcon, MicIcon, ChevronDownIcon, NovaMarkIcon, ArrowUpIcon, InfinityIcon, TrashIcon } from './Icons';
+import { parseToolCalls, stripToolCalls, describeToolCall, formatToolResults } from '../services/agentTools';
+import { StopIcon, CheckIcon, SparkleIcon, PlusIcon, HistoryIcon, ChevronDownIcon, NovaMarkIcon, ArrowUpIcon, InfinityIcon, TrashIcon } from './Icons';
 
 const LEARN_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const MODES = [
-  { id: 'agent', label: 'Agent', title: 'Plans a change, can run commands and read/write files, then shows a diff to review' },
+  { id: 'agent', label: 'Agent', title: 'Autonomously reads, edits, runs and fixes across the whole project — no approvals' },
   { id: 'ask', label: 'Ask', title: 'Explains code and answers questions without touching the project' },
 ];
 // Safety cap on how many tool round-trips a single Agent turn may chain.
@@ -198,25 +199,98 @@ function renderProseBlocks(value, keyBase) {
   return out;
 }
 
-function MessageBody({ content }) {
+/** Collapse long snippets so a huge answer doesn't push the thread off-screen. */
+const CODE_COLLAPSE_AT = 14;
+
+// Commands that keep running until stopped (dev servers, watchers). These are
+// sent to the LIVE integrated terminal instead of being captured to completion,
+// so their output streams in real time and the agent is told it is still going.
+const LONG_RUNNING_RE = /(^|\s)(npm|pnpm|yarn|bun|npx|node)?\s*(run\s+)?(dev|start|serve|watch|develop|serve\b)/i;
+function isLongRunning(command) {
+  const c = String(command || '').toLowerCase();
+  return LONG_RUNNING_RE.test(c) || /\b(vite|webpack\s+serve|ng\s+serve|react-scripts\s+start|next\s+dev|nodemon|http-server|python\s+-m\s+http\.server)\b/i.test(c);
+}
+
+// Compact a workspace tree (from agentListDir) into a bounded text outline so
+// the model can "see" project structure without a huge payload.
+function formatTree(nodes, depth = 0) {
+  const out = [];
+  const walk = (list, level) => {
+    for (const node of list || []) {
+      if (out.length >= 400) return;
+      out.push(`${'  '.repeat(level)}${node.name}${node.type === 'folder' ? '/' : ''}`);
+      if (node.children?.length) walk(node.children, level + 1);
+    }
+  };
+  walk(nodes, depth);
+  return out.join('\n') || '(empty)';
+}
+
+function formatSearch(result) {
+  const hits = (result && result.results) || [];
+  if (!hits.length) return 'No matches.';
+  return hits.slice(0, 60)
+    .map((h) => `${h.path}:${h.line}  ${h.preview}`)
+    .join('\n') + (result.truncated ? '\n… more matches' : '');
+}
+
+function CodeCard({ segment, onApply }) {
+  const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const lines = useMemo(() => segment.value.split('\n'), [segment.value]);
+  const collapsible = lines.length > CODE_COLLAPSE_AT;
+  const shown = collapsible && !expanded ? lines.slice(0, CODE_COLLAPSE_AT) : lines;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard?.writeText(segment.value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    } catch { /* clipboard unavailable; ignore */ }
+  };
+
+  return (
+    <div className="ai-code-block">
+      <div className="ai-code-head">
+        <span className="ai-code-lang">{segment.lang || 'code'}</span>
+        <div className="ai-code-tools">
+          {collapsible && (
+            <button type="button" className="ai-code-toggle" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? 'Collapse' : `Expand (${lines.length} lines)`}
+            </button>
+          )}
+          {onApply && (
+            <button type="button" className="ai-code-apply" onClick={() => onApply(segment)}>
+              <CheckIcon size={13} /> Review as edit
+            </button>
+          )}
+          <button type="button" className="ai-code-copy" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
+        </div>
+      </div>
+      <pre className="ai-code ai-code-numbered">
+        {shown.map((line, i) => (
+          <span className="ai-code-line" key={i}>
+            <span className="ai-code-no">{i + 1}</span>
+            <span className="ai-code-text">{line || ' '}</span>
+          </span>
+        ))}
+      </pre>
+      {collapsible && !expanded && (
+        <button type="button" className="ai-code-more" onClick={() => setExpanded(true)}>
+          Show {lines.length - CODE_COLLAPSE_AT} more line{lines.length - CODE_COLLAPSE_AT === 1 ? '' : 's'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function MessageBody({ content, onApplyCode }) {
   const segments = segmentContent(content);
   return (
     <div className="ai-message-body">
       {segments.map((segment, index) =>
         segment.type === 'code' ? (
-          <div className="ai-code-block" key={index}>
-            <div className="ai-code-head">
-              <span className="ai-code-lang">{segment.lang || 'code'}</span>
-              <button
-                type="button"
-                className="ai-code-copy"
-                onClick={() => navigator.clipboard?.writeText(segment.value)}
-              >
-                Copy
-              </button>
-            </div>
-            <pre className="ai-code">{segment.value}</pre>
-          </div>
+          <CodeCard key={index} segment={segment} onApply={onApplyCode} />
         ) : (
           segment.value.trim() && <Fragment key={index}>{renderProseBlocks(segment.value, `s${index}`)}</Fragment>
         )
@@ -238,29 +312,26 @@ function clipOutput(text) {
   return value.length > 2000 ? `${value.slice(0, 2000)}\n… truncated for display` : value;
 }
 
-// One card per tool call: shows what the Agent wants to do, its live status,
-// captured output, and (for run_command) the Run / Skip approval buttons.
-function ActionCard({ action, onApprove, onSkip }) {
+// One card per tool call: what the Agent is doing, its live status, and — for
+// commands and reads — the captured output. There are no approval buttons: in
+// Agent mode ordinary work runs automatically; safety is enforced in the main
+// process, and the only user control that matters is the global Stop button.
+function ActionCard({ action }) {
   const status = ACTION_STATUS[action.status] || ACTION_STATUS.running;
-  const showOutput = action.output && (action.tool === 'run_command' || action.tool === 'read_file');
+  const showOutput = Boolean(action.output);
+  const isCommand = action.tool === 'run_command';
   return (
     <div className={`ai-action ai-action-${action.tool} is-${status.tone}`}>
       <div className="ai-action-head">
         <span className="ai-action-title">{action.title}</span>
         {action.detail && <code className="ai-action-detail">{action.detail}</code>}
+        {isCommand && action.code != null && (
+          <span className={`ai-action-exit tone-${action.code === 0 ? 'done' : 'error'}`}>exit {action.code}</span>
+        )}
         <span className={`ai-action-status tone-${status.tone}`}>{status.label}</span>
       </div>
-      {action.tool === 'run_command' && action.status === 'awaiting' && (
-        <div className="ai-action-approve">
-          <span className="ai-action-hint">Allow NovaCode to run this command in your workspace?</span>
-          <div className="ai-action-buttons">
-            <button type="button" className="ai-action-run" onClick={() => onApprove(action.id)}>Run</button>
-            <button type="button" className="ai-action-skip" onClick={() => onSkip(action.id)}>Skip</button>
-          </div>
-        </div>
-      )}
       {action.error && <pre className="ai-action-error">{action.error}</pre>}
-      {showOutput && <pre className="ai-action-output">{clipOutput(action.output)}</pre>}
+      {showOutput && <pre className={`ai-action-output${isCommand ? ' ai-terminal-card' : ''}`}>{clipOutput(action.output)}</pre>}
     </div>
   );
 }
@@ -280,16 +351,32 @@ export default function AIPanel({
   onProviderChange,
   onStreamingChange,
   onProposeEdit,
+  onAgentChange,
+  agentChanges = [],
+  onUndoAgentChanges,
   onOpenSettings,
+  onOpenHistory,
+  pendingPrompt = null,
+  onConsumePendingPrompt,
 }) {
   const provider = aiSettings.provider || 'openai';
   const [providers, setProviders] = useState([]);
   const [keyStatus, setKeyStatus] = useState({ hasKey: false, source: null, loaded: false });
   const [keyBusy, setKeyBusy] = useState(false);
+  // API key capture. The Settings text promises keys are "managed in the AI
+  // panel", so this is where a pasted key (e.g. a free Groq key) gets stored.
+  const [keyDraft, setKeyDraft] = useState('');
+  const [keyFormOpen, setKeyFormOpen] = useState(false);
+  // Manual model pick in the composer; null means "follow the mode default"
+  // (Agent → qwen, Ask → gpt-oss-20b) from the provider's central config.
+  const [modelOverride, setModelOverride] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [attachContext, setAttachContext] = useState(true);
-  const [level, setLevel] = useState('beginner');
+  // Default to a solid, intermediate depth so answers read for someone who
+  // knows the fundamentals; the composer selector still switches to beginner
+  // or advanced per chat.
+  const [level, setLevel] = useState('intermediate');
   const [error, setError] = useState('');
   const [streaming, setStreaming] = useState(false);
   // Transient "the AI is busy, waiting…" note shown while a rate-limited run
@@ -341,8 +428,31 @@ export default function AIPanel({
   const activeProvider = providers.find((entry) => entry.id === provider)
     || { id: provider, label: provider, requiresKey: true };
 
+  // Model resolution. The provider registry is the single source of truth for
+  // which model powers each mode (modeModels); the composer dropdown can
+  // override it (modelOverride). Falls back to the saved settings model, then
+  // the provider default, so a descriptor without modeModels never breaks.
+  const modeModels = activeProvider.modeModels || {};
+  const modelOptions = activeProvider.models || [];
+  const modelLabels = activeProvider.modelLabels || {};
+  const effectiveModel = modelOverride
+    || modeModels[mode === 'agent' ? 'agent' : 'ask']
+    || aiSettings.model
+    || activeProvider.defaultModel
+    || '';
+
   useEffect(() => {
-    client.listAiProviders().then((list) => setProviders(list || [])).catch(() => {});
+    client.listAiProviders().then((list) => {
+      const allowed = list || [];
+      setProviders(allowed);
+      // Keep the composer on a provider the build actually offers: an older
+      // session may remember one that's no longer selectable (this build is
+      // Groq-only), and a blank dropdown would otherwise strand the send path.
+      if (allowed.length && !allowed.some((p) => p.id === provider)) {
+        onProviderChange?.(allowed[0].id);
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reconcile once against the initial provider
   }, []);
 
   useEffect(() => {
@@ -402,6 +512,18 @@ export default function AIPanel({
       } else if (event.type === 'done') {
         startingRef.current = false;
         setStreamStatus('');
+        // Clean the finished turn: drop raw tool-call markup (fenced JSON or the
+        // XML envelope some models emit) from the visible bubble. The actions are
+        // already shown as cards, so the protocol text is pure noise here.
+        setMessages((current) => {
+          const next = [...current];
+          const last = next[next.length - 1];
+          if (last?.role === 'assistant' && last.content) {
+            const cleaned = stripToolCalls(last.content);
+            if (cleaned !== last.content) next[next.length - 1] = { ...last, content: cleaned };
+          }
+          return next;
+        });
         try {
           finishReasonRef.current = JSON.parse(event.data || '{}').reason || null;
         } catch {
@@ -466,6 +588,14 @@ export default function AIPanel({
 
   const recentChats = useMemo(() => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt), [sessions]);
 
+  // Distinct paths the agent touched this turn, for the summary count.
+  const uniqueChangePaths = useMemo(() => {
+    const set = new Set();
+    for (const change of agentChanges) set.add(change.path || change.folder || '');
+    set.delete('');
+    return [...set];
+  }, [agentChanges]);
+
   function openSession(id) {
     const found = sessions.find((s) => s.id === id);
     if (!found) return;
@@ -512,6 +642,26 @@ export default function AIPanel({
     }
   }
 
+  // Store the pasted key via the main-process bridge (never kept in the
+  // renderer), then re-read status so the pill flips to "key saved".
+  async function saveKey() {
+    const value = keyDraft.trim();
+    if (!value) return;
+    setKeyBusy(true);
+    try {
+      await client.setApiKey(provider, value);
+      const status = await client.apiKeyStatus(provider);
+      setKeyStatus({ ...status, loaded: true });
+      setKeyDraft('');
+      setKeyFormOpen(false);
+      setError('');
+    } catch (saveError) {
+      setError(toUserMessage(saveError));
+    } finally {
+      setKeyBusy(false);
+    }
+  }
+
   // Build the exact turns sent to the model: one system prompt for the mode,
   // then the running history (assistant turns carry the raw tool JSON so the
   // model sees what it emitted; tool results arrive as user turns).
@@ -543,7 +693,7 @@ export default function AIPanel({
       stickToBottomRef.current = true;
       threadRef.current?.scrollTo?.({ top: threadRef.current.scrollHeight });
       client
-        .startChat({ provider, messages: buildPayload(history, chatMode), temperature: aiSettings.temperature })
+        .startChat({ provider, model: effectiveModel, messages: buildPayload(history, chatMode), temperature: aiSettings.temperature })
         .then(({ runId }) => {
           // An immediate error/done event may already have completed this run.
           if (!startingRef.current) return;
@@ -585,51 +735,114 @@ export default function AIPanel({
     )));
   }
 
-  // Route a validated tool call to the right bridge, returning a structured
-  // result for the model. Never throws — failures come back as { ok:false }.
+  // Execute a validated tool call against the workspace through the governed
+  // agent:* channels. In Agent mode this runs WITHOUT approval: reads return
+  // their content, edits/creates/deletes/renames/moves apply immediately, and
+  // run_command executes for real — long-running servers stream into the
+  // integrated terminal, everything else is captured and fed back to the model.
+  // The backend re-checks every operation (workspace confinement, secrets,
+  // destructive commands), so a refusal here is a real policy block, not a UI gate.
   async function executeTool(call) {
     const args = call.args || {};
-    if (call.tool === 'run_command') {
-      if (!workspaceRoot) return { tool: call.tool, args, ok: false, error: 'Open a folder first so commands run inside your workspace.' };
-      const r = await client.runTerminalCapture({ root: workspaceRoot, cwd: args.cwd, command: args.command });
-      return { tool: call.tool, args, ok: !r.error && r.code === 0, output: r.output || '', code: r.code ?? null, error: r.error || '' };
-    }
-    if (call.tool === 'read_file') {
-      if (!workspaceRoot) return { tool: call.tool, args, ok: false, error: 'Open a folder first.' };
-      try {
-        const content = await client.readFile(workspaceRoot, args.path);
-        return { tool: call.tool, args, ok: true, output: typeof content === 'string' ? content : '' };
-      } catch (readError) {
-        return { tool: call.tool, args, ok: false, error: toUserMessage(readError) };
+    const root = workspaceRoot;
+    const fail = (message) => ({ tool: call.tool, args, ok: false, error: message });
+    if (!root) return fail('Open a project folder first so the agent has a workspace to work in.');
+    try {
+      switch (call.tool) {
+        case 'read_file': {
+          if (typeof args.path !== 'string' || !args.path.trim()) return fail('A file path is required.');
+          const res = await client.agentReadFile({ root, path: args.path });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not read the file.');
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: res.content || '' };
+        }
+        case 'list_dir': {
+          const res = await client.agentListDir({ root, target: args.path || root });
+          if (res?.unavailable) return fail(res.error);
+          if (Array.isArray(res) === false && res?.error) return fail(res.error);
+          return { tool: call.tool, args: { path: args.path || '.' }, ok: true, output: formatTree(Array.isArray(res) ? res : []) };
+        }
+        case 'search': {
+          if (typeof args.query !== 'string' || !args.query) return fail('A search query is required.');
+          const res = await client.agentSearch({ root, query: args.query, isRegex: Boolean(args.isRegex), caseSensitive: Boolean(args.caseSensitive) });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Search failed.');
+          return { tool: call.tool, args: { query: args.query }, ok: true, output: formatSearch(res) };
+        }
+        case 'write_file':
+        case 'create_file': {
+          if (typeof args.path !== 'string' || !args.path.trim()) return fail('A file path is required.');
+          const content = typeof args.content === 'string' ? args.content : '';
+          const res = await client.agentWriteFile({ root, path: args.path, content });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not write the file.');
+          onAgentChange?.({ path: res.filePath, after: content, created: res.created, historyId: res.id });
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: '', note: `${res.created ? 'Created' : 'Updated'} ${args.path}` };
+        }
+        case 'create_folder': {
+          if (typeof args.path !== 'string' || !args.path.trim()) return fail('A folder path is required.');
+          const res = await client.agentCreateFolder({ root, path: args.path });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not create the folder.');
+          onAgentChange?.({ folder: args.path });
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: '', note: `Created folder ${args.path}` };
+        }
+        case 'delete_path': {
+          if (typeof args.path !== 'string' || !args.path.trim()) return fail('A path is required.');
+          const res = await client.agentDeletePath({ root, path: args.path });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not delete that item.');
+          onAgentChange?.({ path: res.filePath, deleted: true });
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: '', note: `Deleted ${args.path}${res.trashed ? ' (moved to trash)' : ''}` };
+        }
+        case 'rename_path': {
+          if (typeof args.path !== 'string' || typeof args.newName !== 'string' || !args.newName.trim()) return fail('A path and a new name are required.');
+          const res = await client.agentRenamePath({ root, path: args.path, newName: args.newName });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not rename that item.');
+          onAgentChange?.({ path: res.path, renamedFrom: args.path });
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: '', note: `Renamed to ${args.newName}` };
+        }
+        case 'move_path': {
+          if (typeof args.path !== 'string' || typeof args.destDir !== 'string' || !args.destDir.trim()) return fail('A path and a destination folder are required.');
+          const res = await client.agentMovePath({ root, path: args.path, destDir: args.destDir });
+          if (res?.unavailable || res?.error) return fail(res.error || 'Could not move that item.');
+          onAgentChange?.({ path: res.path, movedFrom: args.path });
+          return { tool: call.tool, args: { path: args.path }, ok: true, output: '', note: `Moved to ${args.destDir}` };
+        }
+        case 'run_command': {
+          if (typeof args.command !== 'string' || !args.command.trim()) return fail('A command is required.');
+          const command = args.command.trim();
+          if (isLongRunning(command)) {
+            bus.emit('terminal:run', { command });
+            return { tool: call.tool, args: { command }, ok: true, output: '', note: `Started "${command}" in the integrated terminal — it is still running and streaming live. The user can stop it with the terminal Stop button.` };
+          }
+          const res = await client.agentRunCommand({ root, command, cwd: args.cwd });
+          if (res?.blocked) {
+            return { tool: call.tool, args: { command }, ok: false, code: res.code ?? null, output: res.output || '', error: res.error || 'Command blocked by policy.' };
+          }
+          if (res?.error && res.code == null && !res.output) return fail(res.error);
+          // Echo into the visible terminal so the run is part of its history too.
+          bus.emit('terminal:agent-output', { command, output: res.output || '', code: res.code });
+          return { tool: call.tool, args: { command }, ok: res.code === 0, code: res.code ?? null, output: res.output || '', error: res.error || '' };
+        }
+        default:
+          return fail(`"${call.tool}" is not an available tool.`);
       }
+    } catch (error) {
+      return fail(toUserMessage(error));
     }
-    if (call.tool === 'write_file') {
-      const original = activeFile && activeFile.path === args.path ? activeFile.text : '';
-      onProposeEdit?.({ path: args.path, original, modified: args.content || '' });
-      return { tool: call.tool, args, ok: true, output: '', note: `Opened a diff for ${args.path} for the user to review and accept.` };
-    }
-    return { tool: call.tool, args, ok: false, error: `Unknown tool: ${call.tool}` };
   }
 
-  // Auto tools run at once; run_command parks until the user clicks Run.
+  // Every recognised tool runs at once — there is no approval gate in Agent
+  // mode. Unknown tools never reach here (parseToolCalls drops them), and the
+  // ones that do are re-checked by the main-process policy during execution.
   function handleToolCall(call) {
     const { title, detail } = describeToolCall(call);
     const base = { id: call.id, tool: call.tool, args: call.args, title, detail };
-    if (isAutoTool(call.tool)) {
-      addStepAction({ ...base, status: 'running', output: '', code: null, error: '' });
-      return executeTool(call).then((result) => {
-        updateStepAction(call.id, {
-          status: result.skipped ? 'skipped' : result.ok ? 'done' : 'error',
-          output: result.output || '',
-          code: result.code ?? null,
-          error: result.error || '',
-        });
-        return result;
+    addStepAction({ ...base, status: 'running', output: '', code: null, error: '' });
+    return executeTool(call).then((result) => {
+      updateStepAction(call.id, {
+        status: result.skipped ? 'skipped' : result.ok ? 'done' : 'error',
+        output: result.output || '',
+        code: result.code ?? null,
+        error: result.error || '',
       });
-    }
-    addStepAction({ ...base, status: 'awaiting', output: '', code: null, error: '' });
-    return new Promise((resolve) => {
-      approvalResolversRef.current[call.id] = { call, resolve };
+      return result;
     });
   }
 
@@ -639,6 +852,8 @@ export default function AIPanel({
     busyRef.current = true;
     setAgentRunning(true);
     let history = initialHistory;
+    let acted = false;
+    let nudged = false;
     try {
       for (let step = 0; step < MAX_AGENT_STEPS; step += 1) {
         if (cancelRequestedRef.current) break;
@@ -647,7 +862,20 @@ export default function AIPanel({
         if (cancelRequestedRef.current || ABORTED_REASONS.includes(res.reason)) break;
         history = [...history, { role: 'assistant', content: res.text, raw: res.text }];
         const calls = parseToolCalls(res.text);
-        if (!calls.length) break; // a plain answer ends the turn
+        if (!calls.length) {
+          // The model described what it would do but emitted no action. Real
+          // agents don't stop at the plan, so nudge it ONCE to actually carry it
+          // out — but only while it has done nothing yet, so a genuine final
+          // answer (or a post-action summary) still ends the turn cleanly.
+          if (!acted && !nudged) {
+            nudged = true;
+            const nudge = 'Do not just describe the plan — carry it out now. Emit the novacode-tool block(s) for the first concrete step (for example list_dir or read_file), then stop and wait for the results.';
+            history = [...history, { role: 'user', content: nudge, raw: nudge }];
+            continue;
+          }
+          break; // a plain answer ends the turn
+        }
+        acted = true;
         const results = [];
         for (const call of calls) {
           if (cancelRequestedRef.current) break;
@@ -664,6 +892,37 @@ export default function AIPanel({
     }
   }
 
+  // Push a prompt onto the queue and, when nothing is already draining it, run
+  // every queued message one-by-one. Shared by the composer (send) and external
+  // "Fix with AI" triggers so both get the same rate-limit-safe queueing.
+  function submitPrompt(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return;
+    if (!account) {
+      setError('Sign in to use the assistant.');
+      onRequireSignIn?.();
+      return;
+    }
+    queueRef.current.push(trimmed);
+    setPendingCount(queueRef.current.length);
+    if (processingRef.current) return;
+    processingRef.current = true;
+    (async () => {
+      try {
+        while (queueRef.current.length) {
+          const next = queueRef.current.shift();
+          setPendingCount(queueRef.current.length);
+          await runOneTurn(next);
+          if (cancelRequestedRef.current) break;
+        }
+      } finally {
+        processingRef.current = false;
+        queueRef.current = [];
+        setPendingCount(0);
+      }
+    })();
+  }
+
   async function send(event) {
     event?.preventDefault();
     const text = draft.trim();
@@ -674,25 +933,7 @@ export default function AIPanel({
       return;
     }
     setDraft('');
-    // Queue the message and let a single loop answer them one-by-one. Typing
-    // while the assistant is busy (or waiting out a rate limit) no longer
-    // drops the message.
-    queueRef.current.push(text);
-    setPendingCount(queueRef.current.length);
-    if (processingRef.current) return;
-    processingRef.current = true;
-    try {
-      while (queueRef.current.length) {
-        const next = queueRef.current.shift();
-        setPendingCount(queueRef.current.length);
-        await runOneTurn(next);
-        if (cancelRequestedRef.current) break;
-      }
-    } finally {
-      processingRef.current = false;
-      queueRef.current = [];
-      setPendingCount(0);
-    }
+    submitPrompt(text);
   }
 
   // One user turn -> model answer (Ask) or a full agent loop, built from the
@@ -722,6 +963,17 @@ export default function AIPanel({
     }
   }
 
+  // An external panel (e.g. Deploy's "Fix with AI") hands us a prompt to run in
+  // Agent mode. Consume it when it lands — including when this panel has only
+  // just mounted because that request opened it.
+  useEffect(() => {
+    if (!pendingPrompt) return;
+    const text = pendingPrompt;
+    onConsumePendingPrompt?.();
+    submitPrompt(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire only when a new request arrives
+  }, [pendingPrompt]);
+
   // Resolve every parked approval so an awaiting run_command can't hang the
   // loop after the user stops or switches chats.
   function resolveAllPending() {
@@ -747,30 +999,6 @@ export default function AIPanel({
     stopRun();
   }
 
-  function approveAction(id) {
-    const pending = approvalResolversRef.current[id];
-    if (!pending) return undefined;
-    delete approvalResolversRef.current[id];
-    updateStepAction(id, { status: 'running' });
-    return executeTool(pending.call).then((result) => {
-      updateStepAction(id, {
-        status: result.skipped ? 'skipped' : result.ok ? 'done' : 'error',
-        output: result.output || '',
-        code: result.code ?? null,
-        error: result.error || '',
-      });
-      pending.resolve(result);
-    });
-  }
-
-  function skipAction(id) {
-    const pending = approvalResolversRef.current[id];
-    if (!pending) return;
-    delete approvalResolversRef.current[id];
-    updateStepAction(id, { status: 'skipped' });
-    pending.resolve({ tool: pending.call.tool, args: pending.call.args, ok: false, skipped: true, output: '' });
-  }
-
   function newChat() {
     stopRun();
     setCurrentId(makeSessionId());
@@ -787,8 +1015,13 @@ export default function AIPanel({
     proposedAnswersRef.current = answerCount;
     onProposeEdit?.({
       path: activeFile.path,
+      name: activeFile.name,
+      language: activeFile.language,
       original: activeFile.text,
       modified: block.code,
+      // Snapshot the base text so Apply can be refused if the buffer changed
+      // while the review was open (patch safety).
+      expectedOriginal: activeFile.text,
     });
   }
 
@@ -798,21 +1031,19 @@ export default function AIPanel({
     proposeEdit(extractFirstCodeBlock(lastAssistant.content), countAnswers(messages));
   }
 
-  // Agent mode rewrites the file, so the moment an answer streams the diff is
-  // offered without the user hunting for a button — Ask mode never auto-edits.
-  // While the agent loop is running we hold off, since write_file opens the
-  // diff itself and intermediate turns are just plans with tool calls.
-  useEffect(() => {
-    if (streaming || agentRunning || mode !== 'agent' || !activeFile || error) return;
-    if (ABORTED_REASONS.includes(finishReasonRef.current)) return;
-    const answers = countAnswers(messages);
-    if (!answers || proposedAnswersRef.current === answers) return;
-    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
-    const block = lastAssistant ? extractFirstCodeBlock(lastAssistant.content) : null;
-    if (!block) return;
-    proposedAnswersRef.current = answers;
-    onProposeEdit?.({ path: activeFile.path, original: activeFile.text, modified: block.code });
-  }, [streaming, agentRunning, mode, error, messages, activeFile, onProposeEdit]);
+  // Propose a specific code card as a whole-file edit for review. Still just a
+  // proposal: it opens the diff and writes nothing until the user Accepts.
+  function proposeSegmentEdit(segment) {
+    if (!segment || !activeFile) return;
+    onProposeEdit?.({
+      path: activeFile.path,
+      name: activeFile.name,
+      language: activeFile.language,
+      original: activeFile.text,
+      modified: segment.value,
+      expectedOriginal: activeFile.text,
+    });
+  }
 
   const inlineState = INLINE_STATES[inlineAIState] || INLINE_STATES.idle;
 
@@ -827,6 +1058,10 @@ export default function AIPanel({
     : keyStatus.hasKey
       ? (keyStatus.source === 'env' ? 'env key' : 'key saved')
       : 'no key';
+  // Show the paste-key form when a keyed provider has no key yet, or the user
+  // explicitly opened it to replace an existing key.
+  const needsKey = activeProvider.requiresKey && keyStatus.loaded && !keyStatus.hasKey;
+  const showKeyForm = needsKey || keyFormOpen;
   const quickPrompts = mode === 'agent'
     ? ['Refactor this into small, clear functions', 'Add error handling to this file', 'Add input validation to this function']
     : ['Explain what this file does', 'Why is this test failing?', 'What does this function assume?'];
@@ -957,7 +1192,7 @@ export default function AIPanel({
               </button>
             )}
             <div className="ai-hero-prompts">
-              <span className="ai-hero-mode">{mode === 'agent' ? 'Agent mode · writes the file, you review the diff' : 'Ask mode · explains without touching the file'}</span>
+              <span className="ai-hero-mode">{mode === 'agent' ? 'Agent mode · reads, edits and runs across the project autonomously' : 'Ask mode · explains without touching the file'}</span>
               {quickPrompts.map((prompt) => (
                 <button
                   type="button"
@@ -984,12 +1219,15 @@ export default function AIPanel({
                 {message.actions?.length > 0 && (
                   <div className="ai-actions">
                     {message.actions.map((action) => (
-                      <ActionCard key={action.id} action={action} onApprove={approveAction} onSkip={skipAction} />
+                      <ActionCard key={action.id} action={action} />
                     ))}
                   </div>
                 )}
                 {message.content
-                  ? <MessageBody content={message.content} />
+                  ? <MessageBody
+                      content={message.content}
+                      onApplyCode={message.role === 'assistant' && activeFile && !streamingThis ? proposeSegmentEdit : undefined}
+                    />
                   : (showTyping
                     ? <div className="ai-message-body">
                       {streamStatus
@@ -1015,7 +1253,57 @@ export default function AIPanel({
         </div>
       )}
 
+      {agentChanges.length > 0 && (
+        <div className="ai-changes-summary" role="status">
+          <div className="ai-changes-head">
+            <span className="ai-changes-title">Changes applied ({uniqueChangePaths.length})</span>
+            {onUndoAgentChanges && (
+              <button type="button" className="ai-changes-undo" onClick={onUndoAgentChanges}>Undo edits</button>
+            )}
+            {onOpenHistory && (
+              <button type="button" className="ai-changes-history" onClick={onOpenHistory}>View diffs</button>
+            )}
+          </div>
+          <ul className="ai-changes-list">
+            {agentChanges.map((change, index) => {
+              const kind = change.created ? 'add' : change.deleted ? 'del' : change.folder ? 'folder' : change.renamedFrom || change.movedFrom ? 'move' : change.after != null ? 'mod' : 'touch';
+              const glyph = { add: '+', del: '−', folder: 'dir', move: '→', mod: 'M', touch: '•' }[kind];
+              return (
+                <li key={`${change.path || change.folder}-${index}`} className="ai-change-line">
+                  <span className={`ai-change-kind kind-${kind}`}>{glyph}</span>
+                  <code className="ai-change-path">{change.path || change.folder}</code>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {/* composer */}
+      {showKeyForm && (
+        <div className="ai-key-form">
+          <label htmlFor="ai-key-input">
+            {activeProvider.label} API key
+            {needsKey ? ' — this provider needs a key (the free provider is rate-limited to ~1 request / 30s)' : ' — replace your saved key'}
+          </label>
+          <div className="key-row">
+            <input
+              id="ai-key-input"
+              type="password"
+              spellCheck="false"
+              autoComplete="off"
+              placeholder="Paste your API key (e.g. gsk_…)"
+              value={keyDraft}
+              onChange={(event) => setKeyDraft(event.target.value)}
+              onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); saveKey(); } }}
+            />
+            <button type="button" className="primary small" onClick={saveKey} disabled={keyBusy || !keyDraft.trim()}>Save key</button>
+            {!needsKey && (
+              <button type="button" className="secondary small" onClick={() => { setKeyFormOpen(false); setKeyDraft(''); }} disabled={keyBusy}>Cancel</button>
+            )}
+          </div>
+        </div>
+      )}
       <form className="ai-composer" onSubmit={send}>
         <textarea
           ref={inputRef}
@@ -1056,14 +1344,25 @@ export default function AIPanel({
               </select>
               <ChevronDownIcon size={13} />
             </label>
+            {modelOptions.length > 1 && (
+              <label
+                className="ai-dropdown ai-model-dropdown"
+                title={modelOverride ? 'Selected model' : `Model (follows ${mode === 'agent' ? 'Agent' : 'Ask'} mode; pick to override)`}
+              >
+                <select
+                  value={effectiveModel}
+                  onChange={(event) => setModelOverride(event.target.value)}
+                  aria-label="Model"
+                >
+                  {modelOptions.map((entry) => (
+                    <option key={entry} value={entry}>{modelLabels[entry] || entry}</option>
+                  ))}
+                </select>
+                <ChevronDownIcon size={13} />
+              </label>
+            )}
           </div>
           <div className="ai-composer-actions">
-            <button type="button" className="icon-button" title="Enhance prompt" aria-label="Enhance prompt" onClick={() => inputRef.current?.focus?.()}>
-              <SparkleIcon size={15} />
-            </button>
-            <button type="button" className="icon-button" title="Voice input is not available offline" aria-label="Voice input" disabled>
-              <MicIcon size={15} />
-            </button>
             {runIdRef.current || agentRunning ? (
               <button type="button" className="ai-send stop" title="Stop the agent" aria-label="Stop" onClick={cancel}>
                 <StopIcon size={16} />
@@ -1110,6 +1409,9 @@ export default function AIPanel({
           {keyLabel}
         </span>
         <button type="button" className="ai-status-link" onClick={onOpenSettings}>settings</button>
+        {activeProvider.requiresKey && keyStatus.hasKey && (
+          <button type="button" className="ai-status-link" onClick={() => setKeyFormOpen((open) => !open)}>replace key</button>
+        )}
         {activeProvider.requiresKey && keyStatus.hasKey && (
           <button type="button" className="ai-status-link danger" onClick={clearKey} disabled={keyBusy}>remove key</button>
         )}

@@ -107,7 +107,45 @@ function applyEvent(prev, event) {
   return next;
 }
 
-export default function DeployPublish({ root, buildCommand, outputDir, onNotify }) {
+// Build a concrete, actionable instruction for the agent from any deploy failure.
+function makeDeployFixPrompt(run, diagnosis) {
+  const lines = [];
+  lines.push(`NovaCode hit a problem during deployment to ${run.provider || 'host'}:`);
+  lines.push('');
+  if (run.message) lines.push(`Error message: ${run.message}`);
+  if (run.state) lines.push(`State: ${run.state}`);
+  if (run.phase) lines.push(`Phase: ${run.phase}`);
+  if (diagnosis?.text) {
+    lines.push('');
+    lines.push('AI diagnosis:');
+    lines.push(diagnosis.text);
+  }
+  if (diagnosis?.hints?.length) {
+    lines.push('');
+    lines.push('Suggested fixes:');
+    diagnosis.hints.forEach((h) => {
+      lines.push(`- ${h.cause}: ${h.fix}`);
+    });
+  }
+  lines.push('');
+  lines.push('Investigate the relevant project files, fix the root cause, and apply the changes directly (edit the files and/or run safe setup commands). Then re-run the deployment to confirm it is fixed, and briefly explain what you changed.');
+  return lines.join('\n');
+}
+
+// One shared "Fix with AI" action for deploy failures.
+function DeployFixButton({ onFixWithAI, run, diagnosis }) {
+  if (!onFixWithAI) return null;
+  return (
+    <div className="dp-actions">
+      <button type="button" className="small primary" onClick={() => onFixWithAI(makeDeployFixPrompt(run, diagnosis))}>
+        Fix with AI
+      </button>
+      <span className="dp-muted">Send this problem to the assistant — it will diagnose and apply a fix in Agent mode.</span>
+    </div>
+  );
+}
+
+export default function DeployPublish({ root, buildCommand, outputDir, onNotify, onFixWithAI }) {
   const [providers, setProviders] = useState([]);
   const [connections, setConnections] = useState([]);
   const [providerId, setProviderId] = useState('');
@@ -659,6 +697,10 @@ export default function DeployPublish({ root, buildCommand, outputDir, onNotify 
 
               {shownDiagnosis?.logError && (
                 <p className="dp-muted">Host build log unavailable: {shownDiagnosis.logError}</p>
+              )}
+
+              {shownDiagnosis && onFixWithAI && (
+                <DeployFixButton onFixWithAI={onFixWithAI} run={run} diagnosis={shownDiagnosis} />
               )}
             </div>
           )}

@@ -1442,3 +1442,325 @@
 .novalink-lan-host-error { color: var(--error, #f87171); }
 .novalink-lan button.danger { color: var(--error, #f87171); border-color: color-mix(in srgb, var(--error, #f87171) 40%, var(--border)); }
 .novalink-lan .hint { color: var(--muted); font-size: 0.72rem; margin: 0; }
+
+/* ==========================================================================
+   NovaLink P2P — simplified peer-to-peer sharing panel
+   ========================================================================== */
+.novalink-p2p {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  overflow-y: auto;
+  height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.novalink-p2p::-webkit-scrollbar { width: 10px; height: 10px; }
+.novalink-p2p::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.p2p-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.78rem;
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--error) 30%, transparent);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-md);
+}
+.p2p-error button {
+  background: none;
+  border: none;
+  color: var(--error);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.p2p-start {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+.p2p-start h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.p2p-start .hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+.p2p-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.p2p-identity {
+  display: flex;
+  gap: 0.5rem;
+}
+.p2p-identity input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.p2p-identity input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+
+.p2p-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.p2p-section h3 {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.p2p-peer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.p2p-peer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  transition: all var(--dur-fast) var(--ease-out);
+  cursor: pointer;
+}
+.p2p-peer:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.p2p-peer.selected {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-sm);
+}
+
+.peer-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  cursor: pointer;
+  min-width: 0;
+}
+.peer-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peer-status {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.p2p-button {
+  padding: 0.45rem 0.85rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.p2p-button:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.p2p-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.p2p-button.primary {
+  background: var(--accent-gradient);
+  border-color: var(--accent-line);
+  color: #fff;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.9rem;
+}
+.p2p-button.primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+.p2p-button.small {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.76rem;
+}
+
+.p2p-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.p2p-chat h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.p2p-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.p2p-message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  animation: nl-msg-in var(--dur-base) var(--ease-out) both;
+  max-width: 80%;
+}
+.p2p-message.sent {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+.p2p-message.received {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+.message-content {
+  padding: 0.75rem 1rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: var(--shadow-sm);
+}
+.p2p-message.sent .message-content {
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 85%, #000) 100%);
+  border: none;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  border-bottom-left-radius: 18px;
+}
+.p2p-message.received .message-content {
+  background: var(--surface);
+  border-bottom-left-radius: 4px;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+.message-time {
+  font-size: 0.7rem;
+  color: var(--faint);
+  padding: 0 0.15rem;
+  margin-top: 0.1rem;
+}
+
+.p2p-input {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.p2p-input input {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  color: var(--text);
+  font-size: 0.9rem;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.p2p-input input:focus {
+  outline: none;
+  border-color: var(--accent-line);
+  box-shadow: var(--focus-ring);
+}
+.p2p-input input::placeholder {
+  color: var(--muted);
+}
+.p2p-input button {
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 85%, #000) 100%);
+  border: none;
+  border-radius: 24px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: opacity var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.p2p-input button:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.p2p-input button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.novalink-p2p .hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+  line-height: 1.4;
+}

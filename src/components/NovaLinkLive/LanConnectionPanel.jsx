@@ -1,57 +1,23 @@
 /**
- * NovaLink LAN connection panel.
+ * NovaLink P2P connection panel.
  *
- * Lets a user find a NovaLink Live host on the same Wi-Fi without typing an IP,
- * pick it, and — separately — offer to host on this machine. It is a thin view:
- * every UDP socket and the host child process live in the main process and are
- * reached only through the narrow `novalinkLan*` IPC bridge (see client).
- *
- * States it surfaces, per the connection spec:
- *   Searching · Host Found · Connecting · Connected · Disconnected
- * plus a manual-IP fallback for networks that block multicast, and a compact
- * host on/off control that reports this machine's LAN address once it is up.
- *
- * It never signs in or bypasses authentication. Selecting a host only points
- * the existing Live client at that base URL; the normal AuthScreen then drives
- * real sign-in against the discovered server.
+ * Automatic peer-to-peer sharing without requiring a server.
+ * Users on the same network automatically discover each other and can
+ * send messages, files, and images directly.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { client, toUserMessage } from '../../services/novaClient';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { toUserMessage } from '../../services/novaClient';
+import p2p, { setupP2PEventListeners } from '../../services/p2pClient';
 
-const MAX_IP_SHOWN = 2;
-
-function derivePhase({ status, hosts, scanning, connecting }) {
-  if (status?.ready && status?.connected) return 'connected';
-  if (connecting || (status?.signedIn && status?.connected) || (status?.configured && !status?.connected && status?.reconnectAttempt > 0)) return 'connecting';
-  if (hosts.length > 0) return 'found';
-  if (scanning) return 'searching';
-  return 'disconnected';
-}
-
-const PHASE_LABEL = {
-  searching: 'Searching the local network…',
-  found: 'NovaLink host found',
-  connecting: 'Connecting…',
-  connected: 'Connected',
-  disconnected: 'Disconnected',
-};
-
-function HostBadge({ phase }) {
-  const tone = phase === 'connected' ? 'on'
-    : phase === 'found' || phase === 'connecting' ? 'warn'
-      : 'off';
-  return <span className={`novalink-lan-badge novalink-lan-badge--${tone}`} data-phase={phase}>{PHASE_LABEL[phase] || 'Disconnected'}</span>;
-}
-
-export default function LanConnectionPanel({ status, onNotify }) {
-  const [hosts, setHosts] = useState([]);
-  const [scanning, setScanning] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
-  const [hostStatus, setHostStatus] = useState(null);
-  const [manual, setManual] = useState({ address: '', port: '10000', tls: false });
+export default function LanConnectionPanel({ onNotify }) {
+  const [running, setRunning] = useState(false);
+  const [identity, setIdentity] = useState(null);
+  const [peers, setPeers] = useState([]);
+  const [connected, setConnected] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [selectedPeer, setSelectedPeer] = useState(null);
+  const [messageInput, setMessageInput] = useState('');
   const [error, setError] = useState('');
-  const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const mountedRef = useRef(true);
 
@@ -60,219 +26,222 @@ export default function LanConnectionPanel({ status, onNotify }) {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Subscribe to the main-process scanner list + this machine's host status.
+  // P2P event listeners
   useEffect(() => {
-    const unsubHosts = client.onNovaLinkLanHosts?.((payload) => {
-      if (!mountedRef.current) return;
-      const list = Array.isArray(payload) ? payload : (payload?.hosts || []);
-      setHosts(list);
-      if (list.length > 0) setScanning(false);
+    const cleanup = setupP2PEventListeners({
+      onMessage: (msg) => {
+        if (mountedRef.current) {
+          setMessages((prev) => [...prev, msg]);
+        }
+      },
+      onPeers: (peerList) => {
+        if (mountedRef.current) {
+          setPeers(peerList);
+        }
+      },
+      onPeerStatus: (peerId, status) => {
+        if (mountedRef.current) {
+          p2p.getConnectedPeers().then((result) => {
+            setConnected(result.peers || []);
+          });
+        }
+      },
     });
-    const unsubStatus = client.onNovaLinkLanHostStatus?.((snap) => {
-      if (mountedRef.current && snap && typeof snap === 'object') setHostStatus(snap);
-    });
-    // Prime with a synchronous pull so a panel opened after a scan isn't blank.
-    client.novalinkLanStatus?.().then((snap) => {
-      if (!mountedRef.current || !snap) return;
-      setHosts(snap.hosts || []);
-      setScanning(Boolean(snap.scanning));
-    }).catch(() => { /* not wired outside desktop */ });
-    client.novalinkLanHostStatus?.().then((snap) => {
-      if (mountedRef.current && snap) setHostStatus(snap);
-    }).catch(() => {});
-    return () => {
-      try { unsubHosts?.(); } catch { /* already gone */ }
-      try { unsubStatus?.(); } catch { /* already gone */ }
-    };
+    return cleanup;
   }, []);
 
-  const phase = useMemo(
-    () => derivePhase({ status, hosts, scanning, connecting }),
-    [status, hosts, scanning, connecting],
-  );
+  // Load initial P2P status
+  useEffect(() => {
+    p2p.status().then((status) => {
+      if (mountedRef.current) {
+        setRunning(status.running);
+        if (status.identity) setIdentity(status.identity);
+        // If running, also fetch discovered peers
+        if (status.running) {
+          p2p.getDiscoveredPeers().then((result) => {
+            if (mountedRef.current) setPeers(result.peers || []);
+          }).catch(() => {});
+          p2p.getConnectedPeers().then((result) => {
+            if (mountedRef.current) setConnected(result.peers || []);
+          }).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
-  const run = useCallback(async (label, action, { silent = false } = {}) => {
+  const handleStart = async () => {
     setBusy(true);
     setError('');
     try {
-      const result = await action();
-      if (!silent) onNotify?.({ tone: 'ok', message: `NovaLink: ${label}.` });
-      return result;
+      const result = await p2p.start();
+      if (result?.success) {
+        setRunning(true);
+        if (result.identity) setIdentity(result.identity);
+        onNotify?.({ tone: 'ok', message: 'P2P sharing started' });
+      }
     } catch (caught) {
-      const msg = toUserMessage(caught, `NovaLink: ${label} failed.`);
+      const msg = toUserMessage(caught, 'Failed to start P2P');
       setError(msg);
       onNotify?.({ tone: 'error', message: msg });
-      return null;
     } finally {
       setBusy(false);
     }
-  }, [onNotify]);
+  };
 
-  const scan = () => run('Searching the local network', async () => {
-    setScanning(true);
-    const result = await client.novalinkLanScan();
-    if (result) {
-      setScanning(Boolean(result.scanning));
-      setHosts(result.hosts || []);
-      if ((result.hosts || []).length === 0) {
-        // Keep scanning flag on so the label reads "Searching…" until the first
-        // host arrives or the user stops; the main process re-queries itself.
-        setScanning(true);
-      }
-    }
-    return result;
-  }, { silent: true });
-
-  const stopScan = () => run('Stopped searching', async () => {
-    const result = await client.novalinkLanStopScan();
-    if (result) setScanning(false);
-    return result;
-  }, { silent: true });
-
-  const connectTo = (host) => run(`Connecting to ${host.name || host.host}`, async () => {
-    setConnecting(true);
-    setSelectedId(host.id);
+  const handleConnect = async (peerId) => {
+    setBusy(true);
+    setError('');
     try {
-      const result = await client.novalinkLanSelectHost({ hostId: host.id });
-      if (result?.ok) {
-        onNotify?.({ tone: 'ok', message: `Now sign in to ${host.name || result.baseUrl}.` });
-      }
-      return result;
+      await p2p.connectToPeer(peerId);
+      const result = await p2p.getConnectedPeers();
+      setConnected(result.peers || []);
+    } catch (caught) {
+      const msg = toUserMessage(caught, 'Failed to connect');
+      setError(msg);
     } finally {
-      // The socket handshake is owned by the Live client; drop the transient
-      // "connecting" hint and let the real status snapshot drive the badge.
-      setConnecting(false);
+      setBusy(false);
     }
-  }, { silent: true });
+  };
 
-  const connectManual = () => run('Connecting to the address you entered', async () => {
-    setConnecting(true);
+  const handleSendMessage = async () => {
+    if (!selectedPeer || !messageInput.trim()) return;
+    setBusy(true);
     try {
-      const port = parseInt(manual.port, 10);
-      const result = await client.novalinkLanManualConnect({
-        address: manual.address.trim(),
-        port: Number.isFinite(port) ? port : undefined,
-        tls: Boolean(manual.tls),
-      });
-      if (result?.ok) onNotify?.({ tone: 'ok', message: `Now sign in at ${result.baseUrl}.` });
-      return result;
+      await p2p.sendMessage(selectedPeer, messageInput);
+      setMessages((prev) => [
+        ...prev,
+        {
+          from: identity?.id,
+          to: selectedPeer,
+          type: 'text',
+          content: messageInput,
+          timestamp: Date.now(),
+        },
+      ]);
+      setMessageInput('');
+    } catch (caught) {
+      const msg = toUserMessage(caught, 'Failed to send message');
+      setError(msg);
     } finally {
-      setConnecting(false);
+      setBusy(false);
     }
-  }, { silent: true });
+  };
 
-  const toggleHost = () => run(hostStatus?.running ? 'Stopped hosting' : 'Started hosting', async () => {
-    if (hostStatus?.running) {
-      const stopped = await client.novalinkLanStopHost();
-      setHostStatus(stopped);
-      return stopped;
+  const handleUpdateName = async (newName) => {
+    try {
+      await p2p.updateDisplayName(newName);
+      const updated = await p2p.getIdentity();
+      setIdentity(updated);
+    } catch (caught) {
+      const msg = toUserMessage(caught, 'Failed to update name');
+      setError(msg);
     }
-    const started = await client.novalinkLanStartHost({});
-    setHostStatus(started);
-    return started;
-  });
-
-  const connectedName = status?.baseUrl || '';
-  const showConnectButton = phase !== 'connected';
+  };
 
   return (
-    <section className="novalink-lan" aria-label="NovaLink local network">
-      <header className="novalink-lan-head">
-        <HostBadge phase={phase} />
-        {connectedName && phase === 'connected'
-          ? <span className="novalink-lan-target" title={connectedName}>{connectedName.replace(/^https?:\/\//, '')}</span>
-          : null}
-        <button
-          type="button"
-          className="novalink-lan-toggle"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-        >
-          {expanded ? 'Hide' : 'LAN options'}
-        </button>
-      </header>
-
-      {error ? <p className="novalink-lan-error" role="alert">{error}</p> : null}
-
-      {expanded ? (
-        <div className="novalink-lan-body">
-          <div className="novalink-lan-scan">
-            {showConnectButton ? (
-              scanning && hosts.length === 0
-                ? <button type="button" onClick={stopScan} disabled={busy}>Stop searching</button>
-                : <button type="button" onClick={scan} disabled={busy}>{hosts.length ? 'Search again' : 'Search the network'}</button>
-            ) : null}
-          </div>
-
-          <ul className="novalink-lan-hosts" aria-label="Discovered hosts">
-            {hosts.length === 0
-              ? <li className="novalink-lan-empty hint">
-                {scanning ? 'Looking for a NovaLink host on this Wi-Fi…' : 'No hosts found yet. Start NovaLink hosting on the other PC, then search.'}
-              </li>
-              : hosts.map((host) => (
-                <li key={host.id} className={`novalink-lan-host ${selectedId === host.id ? 'selected' : ''}`}>
-                  <div className="novalink-lan-host-meta">
-                    <span className="novalink-lan-host-name">{host.name || host.host || 'NovaLink host'}</span>
-                    <span className="novalink-lan-host-addr">
-                      {(host.ips || []).slice(0, MAX_IP_SHOWN).join(', ') || host.baseUrl}
-                      {host.port ? `:${host.port}` : ''}{host.tls ? ' (tls)' : ''}
-                    </span>
-                  </div>
-                  <button type="button" onClick={() => connectTo(host)} disabled={busy || phase === 'connecting'}>
-                    {selectedId === host.id && phase !== 'disconnected' ? 'Connect again' : 'Connect'}
-                  </button>
-                </li>
-              ))}
-          </ul>
-
-          <div className="novalink-lan-manual">
-            <p className="hint">Wi-Fi blocks discovery? Type the host PC&rsquo;s IP address.</p>
-            <div className="novalink-lan-manual-row">
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="192.168.1.42"
-                value={manual.address}
-                onChange={(e) => setManual((m) => ({ ...m, address: e.target.value }))}
-                aria-label="Host IP address"
-                disabled={busy}
-              />
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="port"
-                value={manual.port}
-                onChange={(e) => setManual((m) => ({ ...m, port: e.target.value }))}
-                aria-label="Port"
-                disabled={busy}
-              />
-              <button type="button" onClick={connectManual} disabled={busy || !manual.address.trim()}>
-                Connect by IP
-              </button>
-            </div>
-          </div>
-
-          <div className="novalink-lan-host-control">
-            <div className="novalink-lan-host-control-text">
-              <strong>Host on this computer</strong>
-              {hostStatus?.running ? (
-                <span className="hint">
-                  Running on port {hostStatus.port}. Peers can reach it at
-                  {' '}{(hostStatus.ips || []).slice(0, MAX_IP_SHOWN).map((ip) => `http://${ip}:${hostStatus.port}`).join('  ·  ') || '(no LAN address yet)'}
-                </span>
-              ) : (
-                <span className="hint">Turn this PC into a NovaLink host so others on the Wi-Fi can find it.</span>
-              )}
-            </div>
-            <button type="button" onClick={toggleHost} disabled={busy} className={hostStatus?.running ? 'danger' : ''}>
-              {hostStatus?.running ? 'Stop hosting' : 'Start hosting'}
-            </button>
-            {hostStatus?.lastError && !hostStatus?.running ? (
-              <p className="novalink-lan-host-error hint">{hostStatus.lastError}</p>
-            ) : null}
-          </div>
+    <section className="novalink-p2p" aria-label="P2P Sharing">
+      {error && (
+        <div className="p2p-error">
+          {error}
+          <button onClick={() => setError('')}>&times;</button>
         </div>
-      ) : null}
+      )}
+
+      {!running ? (
+        <div className="p2p-start">
+          <h2>P2P Sharing</h2>
+          <p className="hint">Connect with people on your network to share messages and files directly - no server needed.</p>
+          <button type="button" onClick={handleStart} disabled={busy} className="p2p-button primary">
+            Create Account
+          </button>
+        </div>
+      ) : (
+        <div className="p2p-main">
+          {/* Identity */}
+          <div className="p2p-identity">
+            <input
+              type="text"
+              value={identity?.displayName || ''}
+              onChange={(e) => setIdentity({ ...identity, displayName: e.target.value })}
+              onBlur={(e) => handleUpdateName(e.target.value)}
+              maxLength={32}
+              disabled={busy}
+              placeholder="Your name"
+            />
+          </div>
+
+          {/* Peers */}
+          <div className="p2p-section">
+            <h3>People on your network ({peers.length})</h3>
+            {peers.length === 0 ? (
+              <p className="hint">Looking for people on your network...</p>
+            ) : (
+              <ul className="p2p-peer-list">
+                {peers.map((peer) => {
+                  const isConnected = connected.some((p) => p.id === peer.id);
+                  return (
+                    <li key={peer.id} className={`p2p-peer ${selectedPeer === peer.id ? 'selected' : ''}`}>
+                      <div className="peer-info" onClick={() => setSelectedPeer(peer.id)}>
+                        <span className="peer-name">{peer.displayName}</span>
+                        <span className="peer-status">{isConnected ? '● Connected' : '○ Available'}</span>
+                      </div>
+                      {!isConnected ? (
+                        <button
+                          type="button"
+                          onClick={() => handleConnect(peer.id)}
+                          disabled={busy}
+                          className="p2p-button small"
+                        >
+                          Connect
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Chat */}
+          {selectedPeer && (
+            <div className="p2p-chat">
+              <h3>Chat with {connected.find((p) => p.id === selectedPeer)?.displayName || 'Peer'}</h3>
+              <div className="p2p-messages">
+                {messages
+                  .filter(
+                    (m) =>
+                      (m.from === selectedPeer && m.to === identity?.id) ||
+                      (m.from === identity?.id && m.to === selectedPeer)
+                  )
+                  .map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`p2p-message ${msg.from === identity?.id ? 'sent' : 'received'}`}
+                    >
+                      <span className="message-content">{msg.content}</span>
+                      <span className="message-time">
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+              <div className="p2p-input">
+                <input
+                  type="text"
+                  value={messageInput}
+                  onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Type a message..."
+                  disabled={busy}
+                />
+                <button type="button" onClick={handleSendMessage} disabled={busy || !messageInput.trim()}>
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

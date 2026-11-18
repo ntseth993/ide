@@ -54,6 +54,18 @@ describe('change history', () => {
     expect(entries[0].previous).toBeUndefined();
   });
 
+  it('accepts an agent-edit kind and makes it undoable like any other edit', () => {
+    const history = makeHistory();
+    const entry = history.record({ root: tmpRoot, filePath: 'a.js', previous: 'original\n', content: 'agent wrote\n', kind: 'agent-edit' });
+    expect(entry.kind).toBe('agent-edit');
+    expect(history.list({ root: tmpRoot })[0]).toMatchObject({ kind: 'agent-edit', filePath: 'a.js' });
+  });
+
+  it('rejects an unknown journal kind', () => {
+    const history = makeHistory();
+    expect(() => history.record({ root: tmpRoot, filePath: 'a.js', previous: null, content: 'x', kind: 'bogus' })).toThrow(/Unknown change history kind/);
+  });
+
   it('filters by workspace root and lists newest first', () => {
     const history = makeHistory();
     history.record({ root: tmpRoot, filePath: 'a.js', previous: 'original\n', content: 'one\n' });

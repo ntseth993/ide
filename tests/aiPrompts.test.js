@@ -14,7 +14,7 @@ describe('aiPrompts — chat policy', () => {
     }
   });
 
-  it('makes Agent mode teach the provider-agnostic tool protocol', () => {
+  it('makes Agent mode teach the autonomous multi-tool protocol', () => {
     const prompt = buildChatSystemPrompt({
       mode: 'agent',
       level: 'beginner',
@@ -22,25 +22,50 @@ describe('aiPrompts — chat policy', () => {
       workspaceName: 'demo',
     });
     expect(prompt).toContain('Agent mode');
-    // The three core tools and the fenced-block protocol are all described.
+    // The full autonomous surface is described, run without approvals.
     expect(prompt).toContain('novacode-tool');
     expect(prompt).toContain('run_command');
-    expect(prompt).toContain('read_file');
-    expect(prompt).toContain('write_file');
-    // run_command is gated behind the user's approval.
-    expect(prompt).toMatch(/run_command asks the user to approve/i);
-    // Editing still funnels through a complete file the user can review.
-    expect(prompt).toContain('COMPLETE updated file');
+    expect(prompt).toContain('delete_path');
+    expect(prompt).toContain('create_folder');
+    expect(prompt).toContain('move_path');
+    expect(prompt).toMatch(/You DO the work yourself/i);
+    expect(prompt).toMatch(/needs NO confirmation/i);
+    // It stays confined to the workspace and never touches secrets.
+    expect(prompt).toMatch(/Do NOT touch files outside it/i);
+    expect(prompt).toMatch(/\.env/i);
+    // Errors are inspected and retried a bounded number of times.
+    expect(prompt).toMatch(/Retry a failing command at most twice/i);
+    // Edits funnel through a complete file that can be diffed and undone.
+    expect(prompt).toContain('COMPLETE updated text');
     expect(prompt).toContain('preserve everything else verbatim');
     expect(prompt).toContain('app.js');
     expect(prompt).toContain('"demo" workspace');
+  });
+
+  it('grounds Agent mode in the ACTUAL open file contents and selection', () => {
+    const prompt = buildChatSystemPrompt({
+      mode: 'agent',
+      level: 'intermediate',
+      activeFile: {
+        name: 'app.js',
+        language: 'javascript',
+        text: 'function login(user) { return user; }',
+        selection: 'return user;',
+      },
+    });
+    expect(prompt).toContain('Contents of the currently open file app.js');
+    expect(prompt).toContain('function login(user) { return user; }');
+    expect(prompt).toContain('The user has this code selected');
+    expect(prompt).toContain('return user;');
   });
 
   it('keeps Ask mode explanatory, non-destructive and tool-free', () => {
     const prompt = buildChatSystemPrompt({ mode: 'ask' });
     expect(prompt).toContain('Ask mode');
     expect(prompt).toContain('Do not rewrite the file unless explicitly asked.');
-    expect(prompt).not.toContain('Agent mode');
+    // Ask mode is explicitly told it cannot execute or modify.
+    expect(prompt).toMatch(/CANNOT run commands or modify files/i);
+    expect(prompt).not.toMatch(/You are in Agent mode/);
     expect(prompt).not.toContain('novacode-tool');
   });
 

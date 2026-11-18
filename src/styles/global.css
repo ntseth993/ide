@@ -73,14 +73,69 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: var(--radius-full);
   border: 2px solid transparent;
   background-clip: content-box;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--muted) 55%, transparent);
   background-clip: content-box;
   border: 2px solid transparent;
 }
+::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--accent) 50%, transparent);
+  background-clip: content-box;
+}
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* --- advanced custom scrollbars ------------------------------------------- */
+
+/* Thin minimal scrollbar */
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 25%, transparent);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+/* Accent-colored scrollbar */
+.scrollbar-accent::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-accent::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Glass-effect scrollbar */
+.scrollbar-glass::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--glass-border) 60%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-glass::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--glass-border) 80%, transparent);
+}
+
+/* Hidden scrollbar (scrollable but invisible) */
+.scrollbar-hidden::-webkit-scrollbar { width: 0px; height: 0px; }
+.scrollbar-hidden { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* Auto-hide scrollbar (shows on hover) */
+.scrollbar-autohide::-webkit-scrollbar { width: 8px; height: 8px; opacity: 0; transition: opacity var(--dur-base) var(--ease-out); }
+.scrollbar-autohide:hover::-webkit-scrollbar { opacity: 1; }
+.scrollbar-autohide::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
 
 /* --- keyboard focus (always visible, never on mouse click) ---------------- */
 

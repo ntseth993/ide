@@ -15,6 +15,12 @@ const nodeFs = require('fs');
 const MAX_ENTRY_BYTES = 512 * 1024; // refuse to journal huge files; content beyond this is truncated to a marker
 const DEFAULT_MAX_ENTRIES = 200;
 
+// Journal entry kinds. `ai-edit` is a diff-approved editor edit, `agent-edit`
+// is an autonomous agent write applied straight to disk, and `restore` is an
+// undo of either. Restore/summarize treat every kind the same, so adding one
+// here is all it takes for a new write path to become undoable.
+const VALID_KINDS = new Set(['ai-edit', 'agent-edit', 'restore']);
+
 function makeId() {
   return `ch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
@@ -92,7 +98,7 @@ function createChangeHistory({ filePath, readFile, writeFile, remove, logger, ma
   function record({ root, filePath: target, previous, content, kind = 'ai-edit', refId = null }) {
     if (!root || typeof root !== 'string') throw new Error('Change history entries need a workspace root.');
     if (!target || typeof target !== 'string') throw new Error('Change history entries need a file path.');
-    if (kind !== 'ai-edit' && kind !== 'restore') throw new Error('Unknown change history kind.');
+    if (!VALID_KINDS.has(kind)) throw new Error('Unknown change history kind.');
     const entry = {
       id: makeId(),
       ts: new Date().toISOString(),

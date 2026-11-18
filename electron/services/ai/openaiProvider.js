@@ -58,6 +58,49 @@ function parseRetryAfterMs(value) {
   return null;
 }
 
+// Node's global fetch reports every transport-level failure as a bare
+// `TypeError: fetch failed`; the real reason lives one level down in
+// `error.cause` (a DNS / connection / TLS / proxy system error). Recognise that
+// shape so we can turn the useless message into something actionable.
+const NETWORK_CAUSE_RE = /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|EPIPE|ECANCELED|ENETUNREACH|ENETDOWN|EHOSTUNREACH|ETIMEDOUT|UND_ERR_CONNECT|UND_ERR_HEADERS|UND_ERR_SOCKET|socket hang up|certificate|cert_chain|self[- ]signed|unable_to_verify|ssl|tls|proxy|tunneling/i;
+
+function isFetchTransportError(error) {
+  if (!error || typeof error !== 'object') return false;
+  const message = String(error.message || '');
+  const cause = error.cause || {};
+  const causeText = `${cause.code || ''} ${cause.message || cause.syscall || ''}`;
+  const looksLikeFetchFailure = error.name === 'TypeError' && /fetch failed|network error|load failed/i.test(message);
+  return looksLikeFetchFailure || Boolean(cause.code) || NETWORK_CAUSE_RE.test(causeText);
+}
+
+/** Turn an opaque fetch transport error into a specific, helpful message. */
+function networkFailureMessage(error) {
+  const cause = (error && error.cause) || {};
+  const signal = `${cause.code || ''} ${cause.message || ''} ${error && error.message || ''}`.toLowerCase();
+  if (/enotfound|eai_again|getaddrinfo/.test(signal)) {
+    return 'Could not reach the AI provider: the web address could not be resolved. Check your internet connection or DNS.';
+  }
+  if (/enetunreach|enetdown|ehostunreach/.test(signal)) {
+    return 'Could not reach the AI provider: this machine has no route to it. Check your network connection.';
+  }
+  if (/econnrefused|connection refused/.test(signal)) {
+    return 'Could not connect to the AI provider: the connection was refused, usually by a firewall or proxy. Allow the provider domain and try again.';
+  }
+  if (/econnreset|epipe|socket hang up|und_err_socket|econnclosed/.test(signal)) {
+    return 'The connection to the AI provider dropped mid-request. This is often a flaky network or an interrupting proxy — please retry.';
+  }
+  if (/etimedout|und_err_connect|und_err_headers|connect timeout|timed out/.test(signal)) {
+    return 'Connecting to the AI provider timed out. Check your internet connection or proxy settings, then try again.';
+  }
+  if (/certificate|self[- ]signed|unable_to_verify|unknown ca|ssl|tls|tunneling/.test(signal)) {
+    return 'Your network appears to intercept encrypted traffic (a corporate proxy or firewall), so the AI provider\u2019s security certificate could not be verified. Try another network, or point NovaCode at a local provider such as Ollama.';
+  }
+  if (/proxy/.test(signal)) {
+    return 'A proxy blocked the request to the AI provider. Check your proxy settings or allow the provider domain.';
+  }
+  return 'Could not reach the AI provider. Check your internet connection (and any firewall or proxy), then try again.';
+}
+
 function extractFinishReason(chunk) {
   return chunk?.choices?.[0]?.finish_reason ?? null;
 }
@@ -163,8 +206,14 @@ async function streamChat({ baseUrl, apiKey, model, messages, temperature, signa
       err.cancelled = true;
       throw err;
     }
-    if (error.cause?.code === 'ENOTFOUND' || error.code === 'ENOTFOUND') {
-      throw new Error('Could not reach the AI provider. Check your internet connection and base URL.');
+    if (isFetchTransportError(error)) {
+      // Do NOT auto-retry a transport failure with backoff: a down network or a
+      // blocked proxy will not recover in a few seconds, and waiting would stall
+      // the UI. Flag it so aiService falls back to the other provider at once.
+      const err = new Error(networkFailureMessage(error));
+      err.retryable = false;
+      err.network = true;
+      throw err;
     }
     throw error;
   } finally {
@@ -198,6 +247,7 @@ async function checkConnection({ baseUrl, apiKey, timeoutMs = 15000, fetchImpl =
     return { ok: true, models };
   } catch (error) {
     if (error.name === 'AbortError') return { ok: false, error: 'Connection check timed out.' };
+    if (isFetchTransportError(error)) return { ok: false, error: networkFailureMessage(error) };
     return { ok: false, error: `Could not reach the provider: ${error.message}` };
   } finally {
     clearTimeout(timer);
@@ -208,6 +258,8 @@ module.exports = {
   checkConnection,
   extractDelta,
   extractFinishReason,
+  isFetchTransportError,
   mapHttpError,
+  networkFailureMessage,
   streamChat,
 };

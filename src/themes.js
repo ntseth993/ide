@@ -11,8 +11,28 @@
  */
 export const THEMES = [
   {
+    id: 'system',
+    label: 'System',
+    kind: 'system',
+    blurb: 'Follow your operating system preference',
+    accent: '#7c5cff',
+    accent2: '#22d3ee',
+    accent3: '#3b82f6',
+    swatch: ['#7c5cff', '#22d3ee', '#3b82f6'],
+    palette: {
+      bg: '#080c16',
+      panel: '#0d1424',
+      surface: '#121a2e',
+      surface2: '#18233c',
+      surface3: '#1f2c48',
+      text: '#e6ebf4',
+      muted: '#94a1b8',
+      border: 'rgba(148,163,184,0.13)',
+    },
+  },
+  {
     id: 'dark',
-    label: 'Midnight',
+    label: 'Dark',
     kind: 'dark',
     blurb: 'Violet-cyan accents on deep navy',
     accent: '#7c5cff',
@@ -32,7 +52,7 @@ export const THEMES = [
   },
   {
     id: 'light',
-    label: 'Daylight',
+    label: 'Light',
     kind: 'light',
     blurb: 'Bright, neutral and calm',
     accent: '#6d4aff',
@@ -193,18 +213,33 @@ export const THEMES = [
   },
 ];
 
-export const DEFAULT_THEME = 'dark';
+export const DEFAULT_THEME = 'system';
 
 const THEME_MAP = new Map(THEMES.map((theme) => [theme.id, theme]));
 
 export const THEME_IDS = THEMES.map((theme) => theme.id);
 
-/** Look up a theme, falling back to the default so callers never get null. */
-export function getTheme(id) {
-  return THEME_MAP.get(id) || THEME_MAP.get(DEFAULT_THEME);
+/** Resolve system theme to dark or light based on OS preference. */
+export function resolveSystemTheme() {
+  if (typeof window === 'undefined' || !window.matchMedia) return 'dark';
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return prefersDark ? 'dark' : 'light';
 }
 
-/** Monaco theme id for a NovaCode theme. */
+/** Look up a theme, falling back to the default so callers never get null.
+   System theme resolves to the actual OS preference (dark or light). */
+export function getTheme(id) {
+  if (id === 'system') {
+    id = resolveSystemTheme();
+  }
+  return THEME_MAP.get(id) || THEME_MAP.get('dark');
+}
+
+/** Monaco theme id for a NovaCode theme. System theme resolves to the appropriate OS theme. */
 export function monacoThemeFor(id) {
-  return `nova-${getTheme(id).id}`;
+  if (id === 'system') {
+    const resolved = resolveSystemTheme();
+    return `nova-system-${resolved}`;
+  }
+  return `nova-${id}`;
 }

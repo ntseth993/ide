@@ -16,6 +16,7 @@ export default function EditorArea({
   onCloseTab,
   onChange,
   onCursor,
+  onSelection,
   onEditorMount,
   language: languageOverride,
   // Non-file tabs (e.g. Settings) that live in the same strip and replace the
@@ -129,6 +130,16 @@ export default function EditorArea({
             editor.onDidChangeCursorPosition((event) => {
               onCursor({ line: event.position.lineNumber, column: event.position.column });
             });
+            // Report the selected text so the AI can focus on what the user
+            // highlighted (empty string when nothing is selected).
+            const emitSelection = () => {
+              const model = editor.getModel();
+              const sel = editor.getSelection();
+              const text = model && sel && !sel.isEmpty() ? model.getValueInRange(sel) : '';
+              onSelection?.(text);
+            };
+            editor.onDidChangeCursorSelection(emitSelection);
+            emitSelection();
             onEditorMount?.(editor, monaco);
           }}
           options={{

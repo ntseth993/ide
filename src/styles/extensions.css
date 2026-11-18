@@ -12,6 +12,9 @@
   padding: 0.7rem 0.8rem;
   overflow-y: auto;
   height: 100%;
+  /* Establish a width containment context so cards can respond to the actual
+     panel width (the sidebar is resizable), not the window size. */
+  container-type: inline-size;
 }
 .extensions-panel .panel-header { margin-bottom: 0; border-radius: var(--radius-sm); }
 
@@ -126,8 +129,20 @@
 
 .ext-meta { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; flex: 1; }
 .ext-name { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ext-sub { font-size: 0.7rem; }
-.ext-desc { font-size: 0.76rem; line-height: 1.4; color: var(--text); opacity: 0.85; }
+.ext-sub { font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ext-desc {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text);
+  opacity: 0.85;
+  /* Clamp long marketplace descriptions to two tidy lines instead of letting
+     them collapse to one word per line in a narrow sidebar. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .ext-status {
   font-size: 0.66rem;
@@ -200,4 +215,36 @@
   background: var(--accent-gradient);
   color: #fff;
   font-weight: 700;
+}
+
+/* ==========================================================================
+   Responsive — narrow sidebar
+   --------------------------------------------------------------------------
+   When the panel is squeezed (resizable sidebar), stop crowding the title:
+   keep the icon + text on one line at full width, and drop the status badges
+   and action buttons onto their own line. Uses container queries so it tracks
+   the panel's real width rather than the window's.
+   ========================================================================== */
+@container (max-width: 340px) {
+  .ext-card-main { flex-wrap: wrap; }
+  /* Badges move to a full-width second row, left-aligned, so they never
+     overlap the name. */
+  .ext-badges {
+    flex-basis: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.3rem;
+    margin-top: 0.35rem;
+  }
+  /* Marketplace cards put the status pill directly in the row — let it wrap
+     onto its own line too. */
+  .ext-card-main > .ext-status { margin-top: 0.35rem; }
+  /* Give the title and subtitle room to breathe on one line. */
+  .ext-name { flex: 1 1 auto; min-width: 0; }
+  .ext-desc { -webkit-line-clamp: 3; line-clamp: 3; }
+  /* Buttons stack gracefully instead of overflowing the card edge. */
+  .ext-actions { flex-wrap: wrap; }
+  .ext-actions .small { flex: 1 1 auto; }
 }

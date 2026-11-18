@@ -183,6 +183,13 @@
 .theme-swatch-line.short { top: 22px; left: 16px; width: 36%; background: rgba(255, 255, 255, 0.24); }
 
 .theme-name { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+.theme-badge {
+  margin-left: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--muted);
+  text-transform: lowercase;
+}
 .theme-blurb { font-size: 0.68rem; line-height: 1.35; color: var(--faint); }
 .theme-card.active .theme-name::after {
   content: '●';

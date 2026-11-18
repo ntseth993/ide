@@ -281,10 +281,47 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
 
   useEffect(() => {
     client.terminalProfiles().then((result) => {
-      setProfiles(result?.profiles || []);
-      setPlatform(result?.platform || '');
-      if (result?.defaultId) setActiveProfile(result.defaultId);
-    }).catch(() => setProfiles([]));
+      const profiles = result?.profiles || [];
+      const platform = result?.platform || '';
+      
+      // Fallback for browser mode: add common shell options
+      if (profiles.length === 0) {
+        const isWin = platform === 'win32' || (typeof window !== 'undefined' && navigator.platform?.includes('Win'));
+        const fallbackProfiles = isWin
+          ? [
+              { id: 'cmd', label: 'Command Prompt', default: true },
+              { id: 'powershell', label: 'PowerShell', default: false },
+              { id: 'bash', label: 'Bash (Git Bash)', default: false },
+            ]
+          : [
+              { id: 'bash', label: 'Bash', default: true },
+              { id: 'zsh', label: 'Zsh', default: false },
+              { id: 'fish', label: 'Fish', default: false },
+            ];
+        setProfiles(fallbackProfiles);
+        setActiveProfile(fallbackProfiles.find(p => p.default)?.id || fallbackProfiles[0].id);
+      } else {
+        setProfiles(profiles);
+        if (result?.defaultId) setActiveProfile(result.defaultId);
+      }
+      setPlatform(platform);
+    }).catch(() => {
+      // Fallback on error
+      const isWin = typeof window !== 'undefined' && navigator.platform?.includes('Win');
+      const fallbackProfiles = isWin
+        ? [
+            { id: 'cmd', label: 'Command Prompt', default: true },
+            { id: 'powershell', label: 'PowerShell', default: false },
+            { id: 'bash', label: 'Bash (Git Bash)', default: false },
+          ]
+        : [
+            { id: 'bash', label: 'Bash', default: true },
+            { id: 'zsh', label: 'Zsh', default: false },
+          ];
+      setProfiles(fallbackProfiles);
+      setActiveProfile(fallbackProfiles.find(p => p.default)?.id || fallbackProfiles[0].id);
+      setPlatform(isWin ? 'win32' : 'darwin');
+    });
   }, []);
 
   useEffect(() => {
@@ -351,6 +388,20 @@ export default function TerminalPanel({ root, height, visible, commands = [], pr
       }),
       bus.subscribe('terminal:run', ({ command: cmd } = {}) => {
         if (typeof cmd === 'string' && cmd.trim()) runCommandRef.current?.(cmd.trim());
+      }),
+      // AI Agent captured commands run headless in the main process; mirror
+      // them here as display-only lines (prompt echo + output + exit) so the
+      // real terminal history shows what the agent ran WITHOUT re-running it.
+      bus.subscribe('terminal:agent-output', ({ command: cmd, output, code } = {}) => {
+        if (typeof cmd !== 'string' || !cmd.trim()) return;
+        setLines((current) => {
+          const next = [...current, { type: 'command', text: `${promptRef.current}${cmd.trim()}   (AI agent)` }];
+          if (output) next.push({ type: 'stdout', text: output.replace(/\r\n/g, '\n') });
+          next.push({ type: 'system', text: `Exit code: ${code ?? 'unknown'}` });
+          return next;
+        });
+        setActiveTab('terminal');
+        setSizeState((state) => (state === 'min' ? 'normal' : state));
       }),
     ];
     return () => offs.forEach((off) => off());

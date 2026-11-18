@@ -54,6 +54,20 @@ const api = {
   runTerminalCapture: (payload) => invoke('terminal:run-capture', payload),
   onTerminalEvent: (callback) => subscribe('terminal:event', callback),
 
+  // AI Agent (autonomous; every route is policy-governed in the main process —
+  // workspace confinement, secret-file refusal, destructive-command blocklist).
+  // These are the ONLY file/terminal routes the assistant may use; there is no
+  // generic passthrough.
+  agentReadFile: (payload) => invoke('agent:read-file', payload),
+  agentListDir: (payload) => invoke('agent:list-dir', payload),
+  agentSearch: (payload) => invoke('agent:search', payload),
+  agentWriteFile: (payload) => invoke('agent:write-file', payload),
+  agentCreateFolder: (payload) => invoke('agent:create-folder', payload),
+  agentDeletePath: (payload) => invoke('agent:delete-path', payload),
+  agentRenamePath: (payload) => invoke('agent:rename-path', payload),
+  agentMovePath: (payload) => invoke('agent:move-path', payload),
+  agentRunCommand: (payload) => invoke('agent:run-command', payload),
+
   // settings
   getSettings: () => invoke('settings:get'),
   saveSettings: (patch) => invoke('settings:set', patch),
@@ -239,6 +253,26 @@ const api = {
   onNovaLinkLanHosts: (callback) => subscribe('novalinkLan:hosts', callback),
   // main -> renderer: this machine's hosting status.
   onNovaLinkLanHostStatus: (callback) => subscribe('novalinkLan:host-status', callback),
+
+  // NovaLink P2P - automatic peer-to-peer sharing without requiring a server
+  novalinkP2pStart: () => invoke('novalinkP2p:start'),
+  novalinkP2pStop: () => invoke('novalinkP2p:stop'),
+  novalinkP2pStatus: () => invoke('novalinkP2p:status'),
+  novalinkP2pGetIdentity: () => invoke('novalinkP2p:getIdentity'),
+  novalinkP2pUpdateDisplayName: (payload) => invoke('novalinkP2p:updateDisplayName', payload || {}),
+  novalinkP2pGetDiscoveredPeers: () => invoke('novalinkP2p:getDiscoveredPeers'),
+  novalinkP2pGetConnectedPeers: () => invoke('novalinkP2p:getConnectedPeers'),
+  novalinkP2pConnectToPeer: (payload) => invoke('novalinkP2p:connectToPeer', payload || {}),
+  novalinkP2pDisconnectPeer: (payload) => invoke('novalinkP2p:disconnectPeer', payload || {}),
+  novalinkP2pSendMessage: (payload) => invoke('novalinkP2p:sendMessage', payload || {}),
+  novalinkP2pSendFile: (payload) => invoke('novalinkP2p:sendFile', payload || {}),
+  novalinkP2pSendImage: (payload) => invoke('novalinkP2p:sendImage', payload || {}),
+  novalinkP2pSetAutoConnect: (payload) => invoke('novalinkP2p:setAutoConnect', payload || {}),
+
+  // main -> renderer: P2P events
+  onNovaLinkP2pMessage: (callback) => subscribe('novalinkP2p:message', callback),
+  onNovaLinkP2pPeers: (callback) => subscribe('novalinkP2p:peers', callback),
+  onNovaLinkP2pPeerStatus: (callback) => subscribe('novalinkP2p:peerStatus', callback),
 
   // main -> renderer: every server-pushed frame in one stream.
   onNovaLinkLiveEvent: (callback) => subscribe('novalinkLive:event', callback),

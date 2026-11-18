@@ -25,7 +25,7 @@ const { createAuthFlow } = require('./services/authFlow');
 const fsService = require('./services/fsService');
 const { createAiService } = require('./services/aiService');
 const { createNovaLink } = require('./services/novalink');
-const { createLanDiscovery, createLanHost, manualBaseUrl } = require('./services/novalink');
+const { createLanDiscovery, createLanHost, manualBaseUrl, createP2PService } = require('./services/novalink');
 const liveConfig = require('./services/novalink/liveConfig');
 const { createNovaDbService } = require('./services/novadb/novaDbService');
 const { createNovaDbServer } = require('./services/novadb/novaDbServer');
@@ -549,6 +549,22 @@ function wireServices() {
     dataDir: path.join(USER_DATA, 'novalink-lan-host'),
   });
   const pushHostStatus = () => { try { broadcast('novalinkLan:host-status', lanHost.status()); } catch { /* window gone */ } };
+
+  // NovaLink P2P - automatic peer-to-peer sharing without requiring a server
+  const p2pService = createP2PService({
+    dataDir: path.join(USER_DATA, 'novalink-p2p'),
+    onMessage: (message) => {
+      try { broadcast('novalinkP2p:message', message); } catch { /* window gone */ }
+    },
+    onPeers: (peers) => {
+      try { broadcast('novalinkP2p:peers', peers); } catch { /* window gone */ }
+    },
+    onPeerStatus: (peerId, status) => {
+      try { broadcast('novalinkP2p:peerStatus', { peerId, status }); } catch { /* window gone */ }
+    },
+    logger,
+  });
+
   lanService = {
     scan() { lanDiscovery.start(); return { scanning: lanDiscovery.status().scanning, hosts: lanDiscovery.listHosts() }; },
     stopScan() { lanDiscovery.stop(); return { scanning: false, hosts: lanDiscovery.listHosts() }; },
@@ -559,9 +575,11 @@ function wireServices() {
     startHost(options) { const s = lanHost.start(options); pushHostStatus(); return s; },
     stopHost() { const s = lanHost.stop(); pushHostStatus(); return s; },
     hostStatus() { return lanHost.status(); },
+    p2p: p2pService,
     dispose() {
       try { lanDiscovery.stop(); } catch { /* already stopped */ }
       try { lanHost.stop(); } catch { /* already stopped */ }
+      try { p2pService.stop(); } catch { /* already stopped */ }
     },
   };
 

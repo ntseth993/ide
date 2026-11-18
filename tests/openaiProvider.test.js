@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   extractDelta,
   extractFinishReason,
+  isFetchTransportError,
   mapHttpError,
+  networkFailureMessage,
   streamChat,
 } from '../electron/services/ai/openaiProvider';
 
@@ -153,5 +155,59 @@ describe('openaiProvider.streamChat', () => {
       onDelta: () => {},
     });
     expect(sentBody).not.toHaveProperty('reasoning_effort');
+  });
+
+  it('turns an opaque fetch transport error into an actionable, non-retried message', async () => {
+    await expect(
+      streamChat({
+        baseUrl: 'https://api.example.test/v1',
+        apiKey: 'k',
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        fetchImpl: async () => {
+          throw Object.assign(new TypeError('fetch failed'), {
+            cause: Object.assign(new Error('connect ECONNREFUSED 1.2.3.4:443'), { code: 'ECONNREFUSED' }),
+          });
+        },
+        onDelta: () => {},
+      }),
+    ).rejects.toMatchObject({ retryable: false, network: true, message: expect.stringContaining('refused') });
+  });
+
+  it('recognises a TLS-intercepting proxy as a network failure', async () => {
+    await expect(
+      streamChat({
+        baseUrl: 'https://api.example.test/v1',
+        apiKey: 'k',
+        model: 'm',
+        messages: [{ role: 'user', content: 'hi' }],
+        fetchImpl: async () => {
+          throw Object.assign(new TypeError('fetch failed'), {
+            cause: Object.assign(new Error('unable to verify the first certificate'), { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }),
+          });
+        },
+        onDelta: () => {},
+      }),
+    ).rejects.toMatchObject({ network: true, message: expect.stringContaining('intercept') });
+  });
+});
+
+describe('openaiProvider network failure mapping', () => {
+  const fetchErr = (code, message) => Object.assign(new TypeError('fetch failed'), {
+    cause: Object.assign(new Error(message), { code }),
+  });
+
+  it('detects the fetch transport-error shape', () => {
+    expect(isFetchTransportError(fetchErr('ENOTFOUND', 'getaddrinfo ENOTFOUND'))).toBe(true);
+    expect(isFetchTransportError(new Error('some app error'))).toBe(false);
+  });
+
+  it('maps each transport cause to a distinct, helpful message', () => {
+    expect(networkFailureMessage(fetchErr('ENOTFOUND', 'getaddrinfo'))).toMatch(/resolve|DNS/i);
+    expect(networkFailureMessage(fetchErr('ECONNREFUSED', 'connect refused'))).toMatch(/firewall or proxy/i);
+    expect(networkFailureMessage(fetchErr('ECONNRESET', 'socket reset'))).toMatch(/dropped|retry/i);
+    expect(networkFailureMessage(fetchErr('ETIMEDOUT', 'timed out'))).toMatch(/timed out/i);
+    expect(networkFailureMessage(fetchErr('CERT_HAS_EXPIRED', 'certificate has expired'))).toMatch(/intercept/i);
+    expect(networkFailureMessage(new TypeError('fetch failed'))).toMatch(/internet connection/i);
   });
 });

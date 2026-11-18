@@ -12,7 +12,7 @@ import jsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import cssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
-import { THEMES } from './themes';
+import { THEMES, resolveSystemTheme } from './themes';
 
 self.MonacoEnvironment = {
   getWorker(_workerId, label) {
@@ -150,12 +150,36 @@ export function buildMonacoColors(theme) {
 
 // One Monaco theme per registry entry, so switching theme re-skins the code
 // canvas too — not just the surrounding chrome.
+// System theme resolves to dark or light based on OS preference.
 for (const theme of THEMES) {
+  // Skip system theme in Monaco - it resolves to dark or light
+  if (theme.id === 'system') continue;
+  
   monaco.editor.defineTheme(`nova-${theme.id}`, {
     base: theme.editorBase || (theme.kind === 'light' ? 'vs' : 'vs-dark'),
     inherit: true,
     rules: theme.kind === 'light' ? LIGHT_RULES : DARK_RULES,
     colors: buildMonacoColors(theme),
+  });
+}
+
+// Also define themes for system-resolved dark and light
+const systemDark = THEMES.find(t => t.id === 'dark');
+const systemLight = THEMES.find(t => t.id === 'light');
+if (systemDark) {
+  monaco.editor.defineTheme('nova-system-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: DARK_RULES,
+    colors: buildMonacoColors(systemDark),
+  });
+}
+if (systemLight) {
+  monaco.editor.defineTheme('nova-system-light', {
+    base: 'vs',
+    inherit: true,
+    rules: LIGHT_RULES,
+    colors: buildMonacoColors(systemLight),
   });
 }
 

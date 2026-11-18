@@ -96,4 +96,57 @@
   /* Typography */
   --font-ui: Inter, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'Cascadia Code', Consolas, 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Advanced Gradients */
+  --gradient-primary: linear-gradient(135deg, var(--accent) 0%, var(--accent-3) 100%);
+  --gradient-secondary: linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  --gradient-glass: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+  --gradient-shine: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  --gradient-mesh: 
+    radial-gradient(at 40% 20%, var(--accent-soft) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, var(--accent-2) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, var(--accent-3) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, var(--accent) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, var(--accent-2) 0px, transparent 50%),
+    var(--bg);
+
+  /* Advanced Glass Effects */
+  --glass-strong: 
+    background: color-mix(in srgb, var(--panel) 85%, transparent);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+  --glass-medium: 
+    background: color-mix(in srgb, var(--panel) 70%, transparent);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+  --glass-light: 
+    background: color-mix(in srgb, var(--panel) 55%, transparent);
+    backdrop-filter: blur(12px) saturate(120%);
+    -webkit-backdrop-filter: blur(12px) saturate(120%);
+
+  /* Advanced Shadows */
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.15);
+  --shadow-colored: 0 8px 32px color-mix(in srgb, var(--accent) 25%, transparent);
+  --shadow-inner: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-glow-strong: 
+    0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent),
+    0 12px 48px color-mix(in srgb, var(--accent) 25%, transparent);
+
+  /* Advanced Border Radius */
+  --radius-pill: 50px;
+  --radius-card: 16px;
+  --radius-dialog: 24px;
+
+  /* Advanced Spacing */
+  --gap-xs: 4px;
+  --gap-sm: 8px;
+  --gap-md: 16px;
+  --gap-lg: 24px;
+  --gap-xl: 32px;
+
+  /* Advanced Transitions */
+  --transition-smooth: all var(--dur-base) var(--ease-out);
+  --transition-bounce: all var(--dur-slow) var(--ease-spring);
+  --transition-fast: all var(--dur-fast) var(--ease-out);
 }
