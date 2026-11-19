@@ -4,6 +4,25 @@ All notable changes to NovaCode are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-11-19
+
+### Added
+- **System theme option.** New theme setting that automatically follows the operating system's dark/light mode preference.
+- **PowerShell shell support.** PowerShell is now available in the terminal shell profile dropdown alongside Command Prompt and Bash.
+- **Browser mode AI fallback.** AI assistant now works in browser mode by making direct API calls to the configured provider.
+
+### Changed
+- Default theme changed to 'system' for automatic OS theme detection.
+- Terminal command input styling improved with visible background and border for better text visibility.
+- AI panel input styling improved with visible background and border for better text visibility.
+- Terminal tabs enhanced with better hover/active states and larger click targets.
+- Monaco editor theme mapping updated to handle system theme resolution.
+
+### Fixed
+- Terminal command input text visibility issue.
+- AI panel input text visibility issue.
+- Terminal tabs functionality and visual feedback.
+
 ## [Unreleased]
 
 ### Added
